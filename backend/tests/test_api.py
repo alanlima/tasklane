@@ -13,14 +13,26 @@ def create_project(api: TestClient, name: str = "Launch plan") -> dict:
     return response.json()
 
 
+def test_development_seed_is_available_for_the_integrated_frontend() -> None:
+    api = client()
+
+    response = api.get("/api/projects")
+
+    assert response.status_code == 200
+    project = next(project for project in response.json() if project["name"] == "Tasklane Development")
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    assert [column["name"] for column in board["columns"]] == ["Backlog", "To Do", "In Progress", "Review", "Done"]
+    assert board["tasks"]
+
+
 def test_projects_have_default_workflow_and_board_projection() -> None:
     api = client()
     project = create_project(api)
 
     listing = api.get("/api/projects")
     assert listing.status_code == 200
-    assert listing.json()[0]["id"] == project["id"]
-    assert listing.json()[0]["total_tasks"] == 0
+    created_summary = next(summary for summary in listing.json() if summary["id"] == project["id"])
+    assert created_summary["total_tasks"] == 0
 
     board = api.get(f"/api/projects/{project['id']}/board")
     assert board.status_code == 200

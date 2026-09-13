@@ -4,7 +4,7 @@ Tasklane is a lightweight Kanban project manager focused on fast, visual task fl
 
 The MVP is deliberately small: no authentication, collaboration, notifications, or external integrations. The aim is a quiet, responsive product with Notion-like simplicity, lightweight Trello-style interaction, and durable task-movement processing.
 
-## Planned stack
+## Stack
 
 - Frontend: React, Vite, React Router, Tailwind CSS, shadcn/ui, Lucide, TanStack Query, and dnd-kit.
 - Backend: FastAPI, SQLAlchemy 2.x, Pydantic, Alembic, and pytest.
@@ -38,7 +38,7 @@ The current authoritative specification is [`_docs/specs.md`](_docs/specs.md). I
 
 ## Frontend reference
 
-The frontend currently uses a mocked service layer while the backend is intentionally deferred.
+The React frontend uses a centralized service layer to call the FastAPI `/api` endpoints. The current backend uses disposable, in-memory mock persistence and starts with a `Tasklane Development` sample board for visual exploration.
 
 ### Projects dashboard
 
@@ -50,13 +50,17 @@ The frontend currently uses a mocked service layer while the backend is intentio
 
 ## Local development
 
-Implementation scaffolding has not been added yet. Once it exists, the expected all-in-one local command is:
+Run the full application:
 
 ```bash
 docker compose up --build
 ```
 
-Use `.env.example` as the documented configuration template. Keep local credentials in an ignored `.env` file and configure the backend database with `DATABASE_URL`.
+Then open [http://localhost:5173](http://localhost:5173). The frontend proxies `/api` requests to the FastAPI service, available directly at [http://localhost:8000/docs](http://localhost:8000/docs). Use `docker compose down` to stop both services. Override the exposed ports with `FRONTEND_PORT` and `BACKEND_PORT` when the defaults are busy.
+
+For individual-service development, run `uv run uvicorn app.main:app --reload` from `backend/` and `npm run dev` from `frontent/`.
+
+Use `.env.example` as the documented configuration template. Keep local credentials in an ignored `.env` file and configure the future persistent backend database with `DATABASE_URL`.
 
 ## Quality expectations
 

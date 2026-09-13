@@ -24,6 +24,33 @@ class MockRepository:
         self.labels: dict[str, dict] = {}
         self.actions: dict[str, dict] = {}
         self.action_keys: dict[tuple[str, str], str] = {}
+        self.seed_development_data()
+
+    def seed_development_data(self) -> None:
+        """Provide a useful, disposable board when running the mock backend."""
+        project = self.create_project("Tasklane Development", "A sample board for exploring the Tasklane workflow.")
+        columns = {column["name"]: column for column in self.project_columns(project["id"])}
+        review = self.create_column(project["id"], "Review", 3)
+        columns["Done"]["position"] = 4
+        columns["Review"] = review
+        frontend = {"id": new_id(), "project_id": project["id"], "name": "Frontend", "colour": "#6574C9", "created_at": now()}
+        backend = {"id": new_id(), "project_id": project["id"], "name": "Backend", "colour": "#35685B", "created_at": now()}
+        self.labels[frontend["id"]] = frontend
+        self.labels[backend["id"]] = backend
+        timestamp = now()
+        tasks = (
+            ("Define API contract", "Backlog", "HIGH", 3, [backend["id"]]),
+            ("Connect React board", "In Progress", "MEDIUM", 5, [frontend["id"], backend["id"]]),
+            ("Review Docker setup", "Review", "LOW", 2, [backend["id"]]),
+            ("Create project dashboard", "Done", "NONE", 3, [frontend["id"]]),
+        )
+        for position, (title, column_name, priority, points, label_ids) in enumerate(tasks):
+            column = columns[column_name]
+            task = {"id": new_id(), "project_id": project["id"], "column_id": column["id"], "title": title, "description": None, "priority": priority, "story_points": points, "due_date": None, "position": sum(item["column_id"] == column["id"] for item in self.tasks.values()), "label_ids": label_ids, "created_at": timestamp, "updated_at": timestamp}
+            self.tasks[task["id"]] = task
+            if position == 1:
+                item = {"id": new_id(), "task_id": task["id"], "title": "Call board endpoint", "is_completed": True, "position": 0, "created_at": timestamp, "updated_at": timestamp}
+                self.checklist[item["id"]] = item
 
     def copy(self, value: dict) -> dict:
         return deepcopy(value)
