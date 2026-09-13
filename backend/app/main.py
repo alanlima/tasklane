@@ -8,10 +8,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from .repository import MockRepository, new_id, now
+from .database import DatabaseRepository
 
 app = FastAPI(title="Tasklane API", version="0.1.0", openapi_url="/openapi.json")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_methods=["*"], allow_headers=["*"])
-repository = MockRepository()
+repository = DatabaseRepository(MockRepository())
+
+@app.middleware("http")
+async def persist_changes(request, call_next):
+    response = await call_next(request)
+    if request.method in {"POST", "PATCH", "DELETE"} and response.status_code < 400:
+        repository.save()
+    return response
 
 
 class ProjectCreate(BaseModel): name: str = Field(min_length=1, max_length=120); description: str | None = Field(default=None, max_length=2000)
