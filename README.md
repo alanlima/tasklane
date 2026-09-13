@@ -8,7 +8,7 @@ The MVP is deliberately small: no authentication, collaboration, notifications, 
 
 - Frontend: React, Vite, React Router, Tailwind CSS, shadcn/ui, Lucide, TanStack Query, and dnd-kit.
 - Backend: FastAPI, SQLAlchemy 2.x, Pydantic, Alembic, and pytest.
-- Database: SQLite by default for local development, configurable through `DATABASE_URL` for PostgreSQL.
+- Database: SQLite by default for local development, configurable through `DATABASE_URL` for a future engine change.
 - Runtime: Docker Compose for the frontend and backend.
 
 ## Core behaviour
@@ -58,7 +58,7 @@ docker compose up --build
 
 Then open [http://localhost:5173](http://localhost:5173). The frontend proxies `/api` requests to the FastAPI service, available directly at [http://localhost:8000/docs](http://localhost:8000/docs). Use `docker compose down` to stop both services. Override the exposed ports with `FRONTEND_PORT` and `BACKEND_PORT` when the defaults are busy.
 
-The default database engine is SQLAlchemy with SQLite, stored in the `tasklane_sqlite` Docker volume. Apply schema changes with `uv run alembic upgrade head` from `backend/`; Compose runs this command before starting the API. For future PostgreSQL compatibility testing, start the opt-in service with `COMPOSE_PROFILES=postgres` and set `DATABASE_URL` to its connection URL.
+The default database engine is SQLAlchemy with SQLite, stored in the `tasklane_sqlite` Docker volume. Apply schema changes with `uv run alembic upgrade head` from `backend/`; Compose runs this command before starting the API. A future database engine can be selected through `DATABASE_URL` without changing the API contract.
 
 For individual-service development, run `uv run uvicorn app.main:app --reload` from `backend/` and `npm run dev` from `frontent/`.
 
