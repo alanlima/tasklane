@@ -36,6 +36,18 @@ tasklane/
 
 The current authoritative specification is [`_docs/specs.md`](_docs/specs.md). It defines the MVP scope, API surface, data model, visual direction, durable queue behaviour, and acceptance criteria.
 
+## Frontend reference
+
+The frontend currently uses a mocked service layer while the backend is intentionally deferred.
+
+### Projects dashboard
+
+![Tasklane projects dashboard](_docs/screenshots/projects-dashboard.png)
+
+### Kanban board
+
+![Tasklane Kanban board](_docs/screenshots/kanban-board.png)
+
 ## Local development
 
 Implementation scaffolding has not been added yet. Once it exists, the expected all-in-one local command is:
