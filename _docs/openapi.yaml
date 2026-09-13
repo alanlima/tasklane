@@ -151,7 +151,7 @@ paths:
       tags: [Labels]
       summary: Update a label
       operationId: updateLabel
-      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LabelCreate' } } } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LabelUpdate' } } } }
       responses: { '200': { description: Updated label, content: { application/json: { schema: { $ref: '#/components/schemas/Label' } } } } }
     delete:
       tags: [Labels]
@@ -208,7 +208,8 @@ components:
     ChecklistItemCreate: { type: object, required: [title], properties: { title: { type: string, minLength: 1, maxLength: 240 } } }
     ChecklistItemUpdate: { type: object, minProperties: 1, properties: { title: { type: string, minLength: 1, maxLength: 240 }, is_completed: { type: boolean }, position: { type: integer, minimum: 0 } } }
     Label: { type: object, required: [id, project_id, name, colour, created_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 60 }, colour: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }, created_at: { type: string, format: date-time } } }
-    LabelCreate: { type: object, required: [name, colour], properties: { name: { type: string, minLength: 1, maxLength: 60 }, colour: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } } }
+    LabelCreate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 60 }, colour: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } } }
+    LabelUpdate: { type: object, minProperties: 1, properties: { name: { type: string, minLength: 1, maxLength: 60 }, colour: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } } }
     MoveTaskCommand: { type: object, required: [task_id, target_column_id, target_position, idempotency_key], properties: { task_id: { type: string, format: uuid }, target_column_id: { type: string, format: uuid }, target_position: { type: integer, minimum: 0 }, idempotency_key: { type: string, format: uuid } } }
     MoveColumnCommand: { type: object, required: [column_id, target_position, idempotency_key], properties: { column_id: { type: string, format: uuid }, target_position: { type: integer, minimum: 0 }, idempotency_key: { type: string, format: uuid } } }
     ActionStatus: { type: string, enum: [PENDING, PROCESSING, COMPLETED, FAILED] }
