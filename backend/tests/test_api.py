@@ -152,14 +152,19 @@ def test_database_seed_is_idempotent_and_state_survives_repository_recreation() 
     assert len([item for item in restarted.projects.values() if item["name"] == "Tasklane Development"]) == 1
 
 
-def test_pending_and_failed_actions_are_recovered_in_fifo_order() -> None:
+def test_pending_and_failed_actions_are_recovered_and_persisted_at_startup() -> None:
     api = client(); project = create_project(api); board = api.get(f"/api/projects/{project['id']}/board").json()
     task = api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Recover"}).json()
     action = {"id": "pending-action", "project_id": project["id"], "action_type": "MOVE_TASK", "payload": {"task_id": task["id"], "target_column_id": board["columns"][1]["id"], "target_position": 0, "idempotency_key": "recover"}, "idempotency_key": "recover", "status": "PENDING", "attempt_count": 0, "last_error": None, "created_at": "2026-01-01T00:00:00+00:00", "started_at": None, "completed_at": None}
     main.repository.actions[action["id"]] = action
+    main.repository.save()
+    assert main.recover_actions in app.router.on_startup
     main.recover_actions()
     assert action["status"] == "COMPLETED"
     assert main.repository.tasks[task["id"]]["column_id"] == board["columns"][1]["id"]
+    restarted = DatabaseRepository(MockRepository())
+    assert restarted.actions[action["id"]]["status"] == "COMPLETED"
+    assert restarted.tasks[task["id"]]["column_id"] == board["columns"][1]["id"]
     action["status"] = "FAILED"; action["attempt_count"] = 5
     main.recover_actions()
     assert action["status"] == "FAILED"

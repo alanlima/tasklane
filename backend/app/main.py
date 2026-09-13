@@ -166,6 +166,7 @@ def recover_actions() -> None:
         if action["attempt_count"] >= 5: action["status"] = "FAILED"; continue
         try: process_action(action)
         except HTTPException: pass
+    repository.save()
 
 def accepted_action(project_id: str, action_type: str, payload: dict[str, Any]) -> dict:
     key = (project_id, payload["idempotency_key"])
@@ -182,3 +183,7 @@ def move_column(project_id: str, payload: MoveColumn) -> dict: project_or_404(pr
 def get_action(action_id: str) -> dict:
     if action_id not in repository.actions: raise HTTPException(404, "Action not found")
     return repository.copy(repository.actions[action_id])
+
+
+# FastAPI executes this during application startup, before serving requests.
+app.router.on_startup.append(recover_actions)
