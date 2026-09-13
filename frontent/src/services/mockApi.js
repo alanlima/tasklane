@@ -12,7 +12,16 @@ export const api = {
   reset: () => {}, listProjects: async () => (await request("/api/projects")).map(mapSummary), getBoard: async (projectId) => mapBoard(await request(`/api/projects/${projectId}/board`)),
   createProject: ({ name, description }) => request("/api/projects", { method: "POST", body: JSON.stringify({ name, description }) }),
   createTask: async (projectId, { title, columnId }) => mapTask(await request(`/api/projects/${projectId}/tasks`, { method: "POST", body: JSON.stringify({ title, column_id: columnId }) })),
-  updateTask: async (projectId, taskId, patch) => { if (patch.columnId) return api.moveTask(projectId, taskId, patch.columnId, 0); const payload = { ...patch, priority: patch.priority?.toUpperCase(), story_points: patch.points, due_date: patch.dueDate || null, label_ids: patch.labelIds }; delete payload.points; delete payload.dueDate; delete payload.labelIds; return mapTask(await request(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) })); },
+  updateTask: async (projectId, taskId, patch) => {
+    if (Object.keys(patch).length === 1 && "columnId" in patch) return api.moveTask(projectId, taskId, patch.columnId, 0);
+    const payload = { ...patch };
+    if ("priority" in patch) payload.priority = patch.priority?.toUpperCase();
+    if ("points" in patch) { payload.story_points = patch.points; delete payload.points; }
+    if ("dueDate" in patch) { payload.due_date = patch.dueDate || null; delete payload.dueDate; }
+    if ("labelIds" in patch) { payload.label_ids = patch.labelIds; delete payload.labelIds; }
+    delete payload.columnId;
+    return mapTask(await request(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) }));
+  },
   moveTask: (projectId, taskId, targetColumnId, targetPosition) => request(`/api/projects/${projectId}/actions/move-task`, { method: "POST", body: JSON.stringify({ task_id: taskId, target_column_id: targetColumnId, target_position: targetPosition, idempotency_key: id() }) }),
   createColumn: (projectId, name) => request(`/api/projects/${projectId}/columns`, { method: "POST", body: JSON.stringify({ name }) }),
   createChecklistItem: async (taskId, title) => mapChecklistItem(await request(`/api/tasks/${taskId}/checklist`, { method: "POST", body: JSON.stringify({ title }) })),

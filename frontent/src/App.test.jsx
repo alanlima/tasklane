@@ -17,4 +17,14 @@ describe("frontend API service", () => {
     expect(fetch).toHaveBeenNthCalledWith(1, "/api/tasks/task-1/checklist", expect.objectContaining({ method: "POST" }));
     expect(fetch).toHaveBeenNthCalledWith(2, "/api/checklist/item-1", expect.objectContaining({ method: "PATCH" }));
   });
+  it("patches task fields without moving a task or clearing omitted values", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "task-1", column_id: "column-2", label_ids: [], story_points: 3, due_date: "2026-10-01", priority: "HIGH", checklist: [] }) });
+    vi.stubGlobal("fetch", fetch);
+
+    await api.updateTask("project-1", "task-1", { title: "Updated title" });
+    await api.updateTask("project-1", "task-1", { priority: "High" });
+
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/tasks/task-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ title: "Updated title" }) }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/tasks/task-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ priority: "HIGH" }) }));
+  });
 });
