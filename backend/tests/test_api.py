@@ -104,3 +104,36 @@ def test_move_task_is_idempotent_and_action_status_is_available() -> None:
     assert first.json()["action_id"] == retry.json()["action_id"]
     assert api.get(f"/api/actions/{first.json()['action_id']}").json()["status"] == "COMPLETED"
     assert api.get(f"/api/tasks/{task['id']}").json()["column_id"] == command["target_column_id"]
+
+
+def test_task_checklist_and_label_can_be_updated_and_deleted() -> None:
+    api = client(); project = create_project(api); board = api.get(f"/api/projects/{project['id']}/board").json()
+    label = api.post(f"/api/projects/{project['id']}/labels", json={"name": "API", "colour": "#35685B"}).json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Contract", "label_ids": [label["id"]]}).json()
+    item = api.post(f"/api/tasks/{task['id']}/checklist", json={"title": "Draft"}).json()
+    assert api.patch(f"/api/checklist/{item['id']}", json={"title": "Review", "position": 0}).json()["title"] == "Review"
+    assert api.patch(f"/api/labels/{label['id']}", json={"name": "Backend", "colour": "#6574C9"}).json()["name"] == "Backend"
+    assert api.delete(f"/api/checklist/{item['id']}").status_code == 204
+    assert api.delete(f"/api/labels/{label['id']}").status_code == 204
+    assert api.get(f"/api/tasks/{task['id']}").json()["label_ids"] == []
+
+
+def test_project_deletion_removes_its_board_and_validation_rejects_cross_project_ids() -> None:
+    api = client(); first = create_project(api, "First"); second = create_project(api, "Second")
+    first_board = api.get(f"/api/projects/{first['id']}/board").json(); second_board = api.get(f"/api/projects/{second['id']}/board").json()
+    task = api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": first_board["columns"][0]["id"], "title": "Keep isolated"}).json()
+    assert api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": second_board["columns"][0]["id"], "title": "Invalid"}).status_code == 409
+    assert api.post(f"/api/projects/{first['id']}/actions/move-task", json={"task_id": task["id"], "target_column_id": second_board["columns"][0]["id"], "target_position": 0, "idempotency_key": "cross-project"}).status_code == 409
+    assert api.delete(f"/api/projects/{first['id']}").status_code == 204
+    assert api.get(f"/api/projects/{first['id']}").status_code == 404
+    assert api.get(f"/api/tasks/{task['id']}").status_code == 404
+
+
+def test_populated_column_requires_destination_and_columns_can_be_reordered() -> None:
+    api = client(); project = create_project(api); board = api.get(f"/api/projects/{project['id']}/board").json(); source, target = board["columns"][:2]
+    api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": source["id"], "title": "Move with column"})
+    assert api.delete(f"/api/columns/{source['id']}").status_code == 409
+    assert api.delete(f"/api/columns/{source['id']}?destination_column_id={target['id']}").status_code == 204
+    command = {"column_id": board["columns"][2]["id"], "target_position": 0, "idempotency_key": "column-order"}
+    assert api.post(f"/api/projects/{project['id']}/actions/move-column", json=command).status_code == 202
+    assert api.get(f"/api/projects/{project['id']}/board").json()["columns"][0]["id"] == command["column_id"]
