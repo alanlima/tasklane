@@ -169,6 +169,8 @@ def process_action(action: dict) -> None:
     action["status"] = "PROCESSING"; action["started_at"] = now(); action["attempt_count"] += 1
     try:
         payload = action["payload"]; project_id = action["project_id"]
+        try: project_service.ensure_writable(project_id)
+        except ProjectArchivedError as error: raise HTTPException(409, str(error)) from error
         if action["action_type"] == "MOVE_TASK":
             task = task_or_404(payload["task_id"]); target = column_or_404(payload["target_column_id"])
             if task["project_id"] != project_id or target["project_id"] != project_id: raise HTTPException(409, "Task and target column must belong to project")

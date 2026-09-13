@@ -63,4 +63,8 @@ class ProjectService:
             for key, value in list(store.items()):
                 if value["project_id"] == project_id:
                     del store[key]
+        for action_id, action in list(self.repository.actions.items()):
+            if action["project_id"] == project_id:
+                del self.repository.actions[action_id]
+        self.repository.action_keys = {(action["project_id"], action["idempotency_key"]): action["id"] for action in self.repository.actions.values()}
         del self.repository.projects[project_id]

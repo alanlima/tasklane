@@ -142,10 +142,12 @@ def test_project_deletion_removes_its_board_and_requires_exact_name() -> None:
     task = api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": first_board["columns"][0]["id"], "title": "Keep isolated"}).json()
     assert api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": second_board["columns"][0]["id"], "title": "Invalid"}).status_code == 409
     assert api.post(f"/api/projects/{first['id']}/actions/move-task", json={"task_id": task["id"], "target_column_id": second_board["columns"][0]["id"], "target_position": 0, "idempotency_key": "cross-project"}).status_code == 409
+    action = api.post(f"/api/projects/{first['id']}/actions/move-task", json={"task_id": task["id"], "target_column_id": first_board["columns"][1]["id"], "target_position": 0, "idempotency_key": "owned-action"}).json()
     assert api.delete(f"/api/projects/{first['id']}", json={"confirmation_name": "not the name"}).status_code == 409
     assert api.delete(f"/api/projects/{first['id']}", json={"confirmation_name": "First"}).status_code == 204
     assert api.get(f"/api/projects/{first['id']}").status_code == 404
     assert api.get(f"/api/tasks/{task['id']}").status_code == 404
+    assert api.get(f"/api/actions/{action['action_id']}").status_code == 404
 
 
 def test_project_archive_requires_confirmation_hides_dashboard_and_enforces_read_only() -> None:
