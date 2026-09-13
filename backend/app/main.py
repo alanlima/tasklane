@@ -138,13 +138,11 @@ def delete_label(label_id: str) -> Response:
     for task in repository.tasks.values(): task["label_ids"] = [item for item in task["label_ids"] if item != label_id]
     del repository.labels[label_id]; return Response(status_code=204)
 
-def accepted_action(project_id: str, action_type: str, payload: dict[str, Any]) -> dict:
-    key = (project_id, payload["idempotency_key"])
-    if key in repository.action_keys: action = repository.actions[repository.action_keys[key]]; return {"action_id": action["id"], "status": action["status"]}
-    action = {"id": new_id(), "project_id": project_id, "action_type": action_type, "payload": payload, "idempotency_key": payload["idempotency_key"], "status": "PENDING", "attempt_count": 0, "last_error": None, "created_at": now(), "started_at": None, "completed_at": None}; repository.actions[action["id"]] = action; repository.action_keys[key] = action["id"]
-    action["status"] = "PROCESSING"; action["started_at"] = now()
+def process_action(action: dict) -> None:
+    action["status"] = "PROCESSING"; action["started_at"] = now(); action["attempt_count"] += 1
     try:
-        if action_type == "MOVE_TASK":
+        payload = action["payload"]; project_id = action["project_id"]
+        if action["action_type"] == "MOVE_TASK":
             task = task_or_404(payload["task_id"]); target = column_or_404(payload["target_column_id"])
             if task["project_id"] != project_id or target["project_id"] != project_id: raise HTTPException(409, "Task and target column must belong to project")
             old_column = task["column_id"]; task["column_id"] = target["id"]; task["position"] = payload["target_position"]; repository.reindex_tasks(project_id, old_column); repository.reindex_tasks(project_id, target["id"])
@@ -153,9 +151,22 @@ def accepted_action(project_id: str, action_type: str, payload: dict[str, Any]) 
             if column["project_id"] != project_id: raise HTTPException(409, "Column must belong to project")
             columns = repository.project_columns(project_id); columns.remove(column); columns.insert(min(payload["target_position"], len(columns)), column)
             for position, item in enumerate(columns): item["position"] = position
-        action["status"] = "COMPLETED"; action["completed_at"] = now(); action["attempt_count"] = 1
-    except HTTPException:
-        action["status"] = "FAILED"; action["completed_at"] = now(); raise
+        action["status"] = "COMPLETED"; action["completed_at"] = now(); action["last_error"] = None
+    except HTTPException as error:
+        action["status"] = "FAILED"; action["completed_at"] = now(); action["last_error"] = error.detail; raise
+
+def recover_actions() -> None:
+    for action in sorted(repository.actions.values(), key=lambda item: item["created_at"]):
+        if action["status"] not in {"PENDING", "PROCESSING", "FAILED"}: continue
+        if action["attempt_count"] >= 5: action["status"] = "FAILED"; continue
+        try: process_action(action)
+        except HTTPException: pass
+
+def accepted_action(project_id: str, action_type: str, payload: dict[str, Any]) -> dict:
+    key = (project_id, payload["idempotency_key"])
+    if key in repository.action_keys: action = repository.actions[repository.action_keys[key]]; return {"action_id": action["id"], "status": action["status"]}
+    action = {"id": new_id(), "project_id": project_id, "action_type": action_type, "payload": payload, "idempotency_key": payload["idempotency_key"], "status": "PENDING", "attempt_count": 0, "last_error": None, "created_at": now(), "started_at": None, "completed_at": None}; repository.actions[action["id"]] = action; repository.action_keys[key] = action["id"]
+    process_action(action)
     return {"action_id": action["id"], "status": action["status"]}
 
 @app.post("/api/projects/{project_id}/actions/move-task", status_code=202)

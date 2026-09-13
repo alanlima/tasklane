@@ -3,6 +3,9 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.main import app
+from app import main
+from app.database import DatabaseRepository
+from app.repository import MockRepository
 
 
 @pytest.fixture
@@ -137,3 +140,26 @@ def test_populated_column_requires_destination_and_columns_can_be_reordered() ->
     command = {"column_id": board["columns"][2]["id"], "target_position": 0, "idempotency_key": "column-order"}
     assert api.post(f"/api/projects/{project['id']}/actions/move-column", json=command).status_code == 202
     assert api.get(f"/api/projects/{project['id']}/board").json()["columns"][0]["id"] == command["column_id"]
+
+
+def test_database_seed_is_idempotent_and_state_survives_repository_recreation() -> None:
+    initial = main.repository
+    seeded = [project for project in initial.projects.values() if project["name"] == "Tasklane Development"]
+    assert len(seeded) == 1
+    project = create_project(client(), "Persistent")
+    restarted = DatabaseRepository(MockRepository())
+    assert project["id"] in restarted.projects
+    assert len([item for item in restarted.projects.values() if item["name"] == "Tasklane Development"]) == 1
+
+
+def test_pending_and_failed_actions_are_recovered_in_fifo_order() -> None:
+    api = client(); project = create_project(api); board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Recover"}).json()
+    action = {"id": "pending-action", "project_id": project["id"], "action_type": "MOVE_TASK", "payload": {"task_id": task["id"], "target_column_id": board["columns"][1]["id"], "target_position": 0, "idempotency_key": "recover"}, "idempotency_key": "recover", "status": "PENDING", "attempt_count": 0, "last_error": None, "created_at": "2026-01-01T00:00:00+00:00", "started_at": None, "completed_at": None}
+    main.repository.actions[action["id"]] = action
+    main.recover_actions()
+    assert action["status"] == "COMPLETED"
+    assert main.repository.tasks[task["id"]]["column_id"] == board["columns"][1]["id"]
+    action["status"] = "FAILED"; action["attempt_count"] = 5
+    main.recover_actions()
+    assert action["status"] == "FAILED"
