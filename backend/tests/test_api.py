@@ -163,3 +163,14 @@ def test_pending_and_failed_actions_are_recovered_in_fifo_order() -> None:
     action["status"] = "FAILED"; action["attempt_count"] = 5
     main.recover_actions()
     assert action["status"] == "FAILED"
+
+
+def test_task_can_be_reordered_within_its_current_column() -> None:
+    api = client(); project = create_project(api); board = api.get(f"/api/projects/{project['id']}/board").json(); column = board["columns"][0]
+    first = api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": column["id"], "title": "First"}).json()
+    second = api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": column["id"], "title": "Second"}).json()
+    response = api.post(f"/api/projects/{project['id']}/actions/move-task", json={"task_id": second["id"], "target_column_id": column["id"], "target_position": 0, "idempotency_key": "same-column"})
+    assert response.status_code == 202
+    tasks = api.get(f"/api/projects/{project['id']}/board").json()["tasks"]
+    ordered = [task["id"] for task in tasks if task["column_id"] == column["id"]]
+    assert ordered == [second["id"], first["id"]]

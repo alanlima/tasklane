@@ -145,7 +145,12 @@ def process_action(action: dict) -> None:
         if action["action_type"] == "MOVE_TASK":
             task = task_or_404(payload["task_id"]); target = column_or_404(payload["target_column_id"])
             if task["project_id"] != project_id or target["project_id"] != project_id: raise HTTPException(409, "Task and target column must belong to project")
-            old_column = task["column_id"]; task["column_id"] = target["id"]; task["position"] = payload["target_position"]; repository.reindex_tasks(project_id, old_column); repository.reindex_tasks(project_id, target["id"])
+            old_column = task["column_id"]
+            destination_tasks = [item for item in repository.project_tasks(project_id) if item["column_id"] == target["id"] and item["id"] != task["id"]]
+            destination_tasks.insert(min(payload["target_position"], len(destination_tasks)), task)
+            task["column_id"] = target["id"]
+            for position, item in enumerate(destination_tasks): item["position"] = position
+            if old_column != target["id"]: repository.reindex_tasks(project_id, old_column)
         else:
             column = column_or_404(payload["column_id"])
             if column["project_id"] != project_id: raise HTTPException(409, "Column must belong to project")
