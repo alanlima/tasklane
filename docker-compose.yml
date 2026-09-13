@@ -1,8 +1,25 @@
 services:
   backend:
     build: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-sqlite:///data/tasklane.db}
+    volumes:
+      - tasklane_sqlite:/app/data
     ports: ["${BACKEND_PORT:-8000}:8000"]
+  database:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    environment:
+      POSTGRES_DB: tasklane
+      POSTGRES_USER: tasklane
+      POSTGRES_PASSWORD: tasklane
+    ports: ["${POSTGRES_PORT:-5432}:5432"]
+    volumes:
+      - tasklane_postgres:/var/lib/postgresql/data
   frontend:
     build: ./frontent
     depends_on: [backend]
     ports: ["${FRONTEND_PORT:-5173}:80"]
+volumes:
+  tasklane_sqlite:
+  tasklane_postgres:

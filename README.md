@@ -58,6 +58,8 @@ docker compose up --build
 
 Then open [http://localhost:5173](http://localhost:5173). The frontend proxies `/api` requests to the FastAPI service, available directly at [http://localhost:8000/docs](http://localhost:8000/docs). Use `docker compose down` to stop both services. Override the exposed ports with `FRONTEND_PORT` and `BACKEND_PORT` when the defaults are busy.
 
+The default database engine is SQLAlchemy with SQLite, stored in the `tasklane_sqlite` Docker volume. Apply schema changes with `uv run alembic upgrade head` from `backend/`; Compose runs this command before starting the API. For future PostgreSQL compatibility testing, start the opt-in service with `COMPOSE_PROFILES=postgres` and set `DATABASE_URL` to its connection URL.
+
 For individual-service development, run `uv run uvicorn app.main:app --reload` from `backend/` and `npm run dev` from `frontent/`.
 
 Use `.env.example` as the documented configuration template. Keep local credentials in an ignored `.env` file and configure the future persistent backend database with `DATABASE_URL`.
