@@ -84,6 +84,21 @@ def test_task_checklist_and_label_crud() -> None:
     assert api.get(f"/api/tasks/{task['id']}").json()["checklist"][0]["title"] == "Write examples"
 
 
+def test_labels_receive_distinct_automatic_colours_and_are_removed_from_tasks() -> None:
+    api = client(); project = create_project(api); board = api.get(f"/api/projects/{project['id']}/board").json()
+    first = api.post(f"/api/projects/{project['id']}/labels", json={"name": "Frontend"}).json()
+    # Reusing a name produces the same first hash candidate, so the generator
+    # must probe and select a colour that is not already used in this project.
+    second = api.post(f"/api/projects/{project['id']}/labels", json={"name": "Frontend"}).json()
+    assert first["colour"] != second["colour"]
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Labelled", "label_ids": [first["id"]]}).json()
+    renamed = api.patch(f"/api/labels/{first['id']}", json={"name": "UI"}).json()
+    assert renamed["name"] == "UI"
+    assert renamed["colour"] == first["colour"]
+    assert api.delete(f"/api/labels/{first['id']}").status_code == 204
+    assert api.get(f"/api/tasks/{task['id']}").json()["label_ids"] == []
+
+
 def test_columns_can_be_created_renamed_and_deleted_when_empty() -> None:
     api = client()
     project = create_project(api)

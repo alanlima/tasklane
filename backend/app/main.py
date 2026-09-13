@@ -9,10 +9,12 @@ from pydantic import BaseModel, Field
 
 from .repository import MockRepository, new_id, now
 from .database import DatabaseRepository
+from .label_service import LabelService
 
 app = FastAPI(title="Tasklane API", version="0.1.0", openapi_url="/openapi.json")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_methods=["*"], allow_headers=["*"])
 repository = DatabaseRepository(MockRepository())
+label_service = LabelService(repository)
 
 @app.middleware("http")
 async def persist_changes(request, call_next):
@@ -29,7 +31,8 @@ class TaskCreate(BaseModel): column_id: str; title: str = Field(min_length=1, ma
 class TaskUpdate(BaseModel): title: str | None = Field(default=None, min_length=1, max_length=240); description: str | None = None; priority: str | None = None; story_points: int | None = Field(default=None, ge=0); due_date: date | None = None; label_ids: list[str] | None = None
 class ChecklistCreate(BaseModel): title: str = Field(min_length=1, max_length=240)
 class ChecklistUpdate(BaseModel): title: str | None = Field(default=None, min_length=1, max_length=240); is_completed: bool | None = None; position: int | None = Field(default=None, ge=0)
-class LabelCreate(BaseModel): name: str = Field(min_length=1, max_length=60); colour: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+class LabelCreate(BaseModel): name: str = Field(min_length=1, max_length=60); colour: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
+class LabelUpdate(BaseModel): name: str | None = Field(default=None, min_length=1, max_length=60); colour: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
 class MoveTask(BaseModel): task_id: str; target_column_id: str; target_position: int = Field(ge=0); idempotency_key: str
 class MoveColumn(BaseModel): column_id: str; target_position: int = Field(ge=0); idempotency_key: str
 
@@ -129,14 +132,17 @@ def delete_checklist(item_id: str) -> Response:
 def list_labels(project_id: str) -> list[dict]: project_or_404(project_id); return [repository.copy(label) for label in repository.labels.values() if label["project_id"] == project_id]
 @app.post("/api/projects/{project_id}/labels", status_code=201)
 def create_label(project_id: str, payload: LabelCreate) -> dict:
-    project_or_404(project_id); label = {"id": new_id(), "project_id": project_id, "name": payload.name, "colour": payload.colour, "created_at": now()}; repository.labels[label["id"]] = label; return repository.copy(label)
+    project_or_404(project_id)
+    return label_service.create(project_id, payload.name, payload.colour)
 @app.patch("/api/labels/{label_id}")
-def update_label(label_id: str, payload: LabelCreate) -> dict: label = label_or_404(label_id); label.update(payload.model_dump()); return repository.copy(label)
+def update_label(label_id: str, payload: LabelUpdate) -> dict:
+    label_or_404(label_id)
+    return label_service.update(label_id, payload.model_dump(exclude_unset=True, exclude_none=True))
 @app.delete("/api/labels/{label_id}", status_code=204)
 def delete_label(label_id: str) -> Response:
     label_or_404(label_id)
-    for task in repository.tasks.values(): task["label_ids"] = [item for item in task["label_ids"] if item != label_id]
-    del repository.labels[label_id]; return Response(status_code=204)
+    label_service.delete(label_id)
+    return Response(status_code=204)
 
 def process_action(action: dict) -> None:
     action["status"] = "PROCESSING"; action["started_at"] = now(); action["attempt_count"] += 1
