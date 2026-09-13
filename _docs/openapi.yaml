@@ -1,0 +1,218 @@
+# Tasklane MVP backend API contract.
+openapi: 3.1.0
+info:
+  title: Tasklane API
+  version: 0.1.0
+  description: |
+    REST contract for the Tasklane MVP. The API is deliberately unauthenticated
+    in this version. Movement commands are durable asynchronous board actions:
+    the server persists an action before returning 202 Accepted.
+servers:
+  - url: http://localhost:8000
+    description: Local development
+# Authentication is intentionally out of scope for the MVP.
+security: []
+tags:
+  - name: Projects
+  - name: Board
+  - name: Columns
+  - name: Tasks
+  - name: Checklist
+  - name: Labels
+  - name: Actions
+paths:
+  /api/projects:
+    get:
+      tags: [Projects]
+      summary: List projects with dashboard summary values
+      operationId: listProjects
+      responses:
+        '200':
+          description: Projects ordered by most recently updated
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/ProjectSummary' } } } }
+    post:
+      tags: [Projects]
+      summary: Create a project with the default workflow
+      operationId: createProject
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectCreate' } } } }
+      responses:
+        '201': { description: Project created, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api/projects/{project_id}:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    get:
+      tags: [Projects]
+      summary: Get a project
+      operationId: getProject
+      responses: { '200': { description: Project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    patch:
+      tags: [Projects]
+      summary: Update a project name or description
+      operationId: updateProject
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectUpdate' } } } }
+      responses: { '200': { description: Updated project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/ValidationError' } }
+    delete:
+      tags: [Projects]
+      summary: Delete a project and all project-owned data
+      operationId: deleteProject
+      responses: { '204': { description: Project deleted }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/board:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    get:
+      tags: [Board]
+      summary: Get all data needed to render a board
+      operationId: getProjectBoard
+      responses: { '200': { description: Board projection, content: { application/json: { schema: { $ref: '#/components/schemas/Board' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/columns:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [Columns]
+      summary: Create a workflow column at the end of a project
+      operationId: createColumn
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ColumnCreate' } } } }
+      responses: { '201': { description: Column created, content: { application/json: { schema: { $ref: '#/components/schemas/Column' } } } }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /api/columns/{column_id}:
+    parameters: [{ $ref: '#/components/parameters/ColumnId' }]
+    patch:
+      tags: [Columns]
+      summary: Rename a column
+      operationId: updateColumn
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ColumnUpdate' } } } }
+      responses: { '200': { description: Updated column, content: { application/json: { schema: { $ref: '#/components/schemas/Column' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    delete:
+      tags: [Columns]
+      summary: Delete an empty column, or move its tasks to destination_column_id first
+      operationId: deleteColumn
+      parameters: [{ name: destination_column_id, in: query, required: false, schema: { type: string, format: uuid } }]
+      responses: { '204': { description: Column deleted }, '409': { description: Column contains tasks and no destination was supplied }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/tasks:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [Tasks]
+      summary: Create a task in a column
+      operationId: createTask
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TaskCreate' } } } }
+      responses: { '201': { description: Task created, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /api/tasks/{task_id}:
+    parameters: [{ $ref: '#/components/parameters/TaskId' }]
+    get:
+      tags: [Tasks]
+      summary: Get a task including its checklist and labels
+      operationId: getTask
+      responses: { '200': { description: Task, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    patch:
+      tags: [Tasks]
+      summary: Update task details except position and column movement
+      operationId: updateTask
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/TaskUpdate' } } } }
+      responses: { '200': { description: Updated task, content: { application/json: { schema: { $ref: '#/components/schemas/Task' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    delete:
+      tags: [Tasks]
+      summary: Delete a task
+      operationId: deleteTask
+      responses: { '204': { description: Task deleted }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/tasks/{task_id}/checklist:
+    parameters: [{ $ref: '#/components/parameters/TaskId' }]
+    post:
+      tags: [Checklist]
+      summary: Add a checklist item
+      operationId: createChecklistItem
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChecklistItemCreate' } } } }
+      responses: { '201': { description: Checklist item created, content: { application/json: { schema: { $ref: '#/components/schemas/ChecklistItem' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/checklist/{item_id}:
+    parameters: [{ $ref: '#/components/parameters/ChecklistItemId' }]
+    patch:
+      tags: [Checklist]
+      summary: Update, complete, or reorder a checklist item
+      operationId: updateChecklistItem
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ChecklistItemUpdate' } } } }
+      responses: { '200': { description: Updated item, content: { application/json: { schema: { $ref: '#/components/schemas/ChecklistItem' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+    delete:
+      tags: [Checklist]
+      summary: Delete a checklist item
+      operationId: deleteChecklistItem
+      responses: { '204': { description: Checklist item deleted }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/labels:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    get:
+      tags: [Labels]
+      summary: List labels belonging to a project
+      operationId: listLabels
+      responses: { '200': { description: Labels, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Label' } } } } } }
+    post:
+      tags: [Labels]
+      summary: Create a project label
+      operationId: createLabel
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LabelCreate' } } } }
+      responses: { '201': { description: Label created, content: { application/json: { schema: { $ref: '#/components/schemas/Label' } } } } }
+  /api/labels/{label_id}:
+    parameters: [{ $ref: '#/components/parameters/LabelId' }]
+    patch:
+      tags: [Labels]
+      summary: Update a label
+      operationId: updateLabel
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/LabelCreate' } } } }
+      responses: { '200': { description: Updated label, content: { application/json: { schema: { $ref: '#/components/schemas/Label' } } } } }
+    delete:
+      tags: [Labels]
+      summary: Delete a label and its task associations
+      operationId: deleteLabel
+      responses: { '204': { description: Label deleted }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/actions/move-task:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [Actions]
+      summary: Persist a task movement action before acknowledgement
+      operationId: moveTask
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MoveTaskCommand' } } } }
+      responses: { '202': { description: Existing or newly persisted action, content: { application/json: { schema: { $ref: '#/components/schemas/ActionAccepted' } } } }, '409': { description: Task and target column do not belong to the project }, '422': { $ref: '#/components/responses/ValidationError' } }
+  /api/projects/{project_id}/actions/move-column:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [Actions]
+      summary: Persist a column reorder action before acknowledgement
+      operationId: moveColumn
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/MoveColumnCommand' } } } }
+      responses: { '202': { description: Existing or newly persisted action, content: { application/json: { schema: { $ref: '#/components/schemas/ActionAccepted' } } } } }
+  /api/actions/{action_id}:
+    parameters: [{ $ref: '#/components/parameters/ActionId' }]
+    get:
+      tags: [Actions]
+      summary: Get action processing status
+      operationId: getAction
+      responses: { '200': { description: Board action, content: { application/json: { schema: { $ref: '#/components/schemas/BoardAction' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+components:
+  parameters:
+    ProjectId: { name: project_id, in: path, required: true, schema: { type: string, format: uuid } }
+    ColumnId: { name: column_id, in: path, required: true, schema: { type: string, format: uuid } }
+    TaskId: { name: task_id, in: path, required: true, schema: { type: string, format: uuid } }
+    ChecklistItemId: { name: item_id, in: path, required: true, schema: { type: string, format: uuid } }
+    LabelId: { name: label_id, in: path, required: true, schema: { type: string, format: uuid } }
+    ActionId: { name: action_id, in: path, required: true, schema: { type: string, format: uuid } }
+  responses:
+    NotFound: { description: Resource not found }
+    ValidationError: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ValidationError' } } } }
+  schemas:
+    Project: { type: object, required: [id, name, created_at, updated_at], properties: { id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    ProjectSummary: { allOf: [{ $ref: '#/components/schemas/Project' }, { type: object, required: [total_tasks, completed_tasks, completion_percentage], properties: { total_tasks: { type: integer, minimum: 0 }, completed_tasks: { type: integer, minimum: 0 }, completion_percentage: { type: integer, minimum: 0, maximum: 100 } } }] }
+    ProjectCreate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 } } }
+    ProjectUpdate: { type: object, minProperties: 1, properties: { name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 } } }
+    Column: { type: object, required: [id, project_id, name, position, created_at, updated_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 80 }, position: { type: integer, minimum: 0 }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    ColumnCreate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 80 } } }
+    ColumnUpdate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 80 } } }
+    Priority: { type: string, enum: [NONE, LOW, MEDIUM, HIGH, URGENT] }
+    Task: { type: object, required: [id, project_id, column_id, title, priority, position, label_ids, checklist, created_at, updated_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, column_id: { type: string, format: uuid }, title: { type: string, minLength: 1, maxLength: 240 }, description: { type: [string, 'null'], maxLength: 20000 }, priority: { $ref: '#/components/schemas/Priority' }, story_points: { type: [integer, 'null'], minimum: 0 }, due_date: { type: [string, 'null'], format: date }, position: { type: integer, minimum: 0 }, label_ids: { type: array, items: { type: string, format: uuid }, uniqueItems: true }, checklist: { type: array, items: { $ref: '#/components/schemas/ChecklistItem' } }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    TaskCreate: { type: object, required: [column_id, title], properties: { column_id: { type: string, format: uuid }, title: { type: string, minLength: 1, maxLength: 240 }, description: { type: [string, 'null'] }, priority: { $ref: '#/components/schemas/Priority' }, story_points: { type: [integer, 'null'], minimum: 0 }, due_date: { type: [string, 'null'], format: date }, label_ids: { type: array, items: { type: string, format: uuid }, uniqueItems: true } } }
+    TaskUpdate: { type: object, minProperties: 1, properties: { title: { type: string, minLength: 1, maxLength: 240 }, description: { type: [string, 'null'] }, priority: { $ref: '#/components/schemas/Priority' }, story_points: { type: [integer, 'null'], minimum: 0 }, due_date: { type: [string, 'null'], format: date }, label_ids: { type: array, items: { type: string, format: uuid }, uniqueItems: true } } }
+    ChecklistItem: { type: object, required: [id, task_id, title, is_completed, position, created_at, updated_at], properties: { id: { type: string, format: uuid }, task_id: { type: string, format: uuid }, title: { type: string, minLength: 1, maxLength: 240 }, is_completed: { type: boolean }, position: { type: integer, minimum: 0 }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    ChecklistItemCreate: { type: object, required: [title], properties: { title: { type: string, minLength: 1, maxLength: 240 } } }
+    ChecklistItemUpdate: { type: object, minProperties: 1, properties: { title: { type: string, minLength: 1, maxLength: 240 }, is_completed: { type: boolean }, position: { type: integer, minimum: 0 } } }
+    Label: { type: object, required: [id, project_id, name, colour, created_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 60 }, colour: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' }, created_at: { type: string, format: date-time } } }
+    LabelCreate: { type: object, required: [name, colour], properties: { name: { type: string, minLength: 1, maxLength: 60 }, colour: { type: string, pattern: '^#[0-9A-Fa-f]{6}$' } } }
+    MoveTaskCommand: { type: object, required: [task_id, target_column_id, target_position, idempotency_key], properties: { task_id: { type: string, format: uuid }, target_column_id: { type: string, format: uuid }, target_position: { type: integer, minimum: 0 }, idempotency_key: { type: string, format: uuid } } }
+    MoveColumnCommand: { type: object, required: [column_id, target_position, idempotency_key], properties: { column_id: { type: string, format: uuid }, target_position: { type: integer, minimum: 0 }, idempotency_key: { type: string, format: uuid } } }
+    ActionStatus: { type: string, enum: [PENDING, PROCESSING, COMPLETED, FAILED] }
+    ActionAccepted: { type: object, required: [action_id, status], properties: { action_id: { type: string, format: uuid }, status: { $ref: '#/components/schemas/ActionStatus' } } }
+    BoardAction: { type: object, required: [id, project_id, action_type, payload, idempotency_key, status, attempt_count, created_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, action_type: { type: string, enum: [MOVE_TASK, MOVE_COLUMN] }, payload: { type: object, additionalProperties: true }, idempotency_key: { type: string, format: uuid }, status: { $ref: '#/components/schemas/ActionStatus' }, attempt_count: { type: integer, minimum: 0 }, last_error: { type: [string, 'null'] }, created_at: { type: string, format: date-time }, started_at: { type: [string, 'null'], format: date-time }, completed_at: { type: [string, 'null'], format: date-time } } }
+    Board: { type: object, required: [project, columns, tasks, labels], properties: { project: { $ref: '#/components/schemas/Project' }, columns: { type: array, items: { $ref: '#/components/schemas/Column' } }, tasks: { type: array, items: { $ref: '#/components/schemas/Task' } }, labels: { type: array, items: { $ref: '#/components/schemas/Label' } } } }
+    ValidationError: { type: object, required: [detail], properties: { detail: { type: array, items: { type: object, required: [msg], properties: { loc: { type: array, items: { type: [string, integer] } }, msg: { type: string }, type: { type: string } } } } } }
