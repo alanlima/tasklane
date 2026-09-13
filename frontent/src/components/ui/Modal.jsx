@@ -1,0 +1,2 @@
+import { X } from "lucide-react";
+export function Modal({ title, children, onClose }) { return <div className="scrim" onMouseDown={onClose}><section className="modal" onMouseDown={(event) => event.stopPropagation()} aria-modal="true" role="dialog" aria-label={title}><button className="icon-button close" onClick={onClose} aria-label="Close"><X size={18} /></button><h2>{title}</h2>{children}</section></div>; }
