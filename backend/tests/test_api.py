@@ -1,28 +1,47 @@
-from fastapi.testclient import TestClient
+import asyncio
+import pytest
+from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 
 
-def client() -> TestClient:
-    return TestClient(app)
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
 
 
-def create_project(api: TestClient, name: str = "Launch plan") -> dict:
+class ApiClient:
+    def request(self, method: str, path: str, **kwargs):
+        async def send():
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as api:
+                return await api.request(method, path, **kwargs)
+        return asyncio.run(send())
+    def get(self, path, **kwargs): return self.request("GET", path, **kwargs)
+    def post(self, path, **kwargs): return self.request("POST", path, **kwargs)
+    def patch(self, path, **kwargs): return self.request("PATCH", path, **kwargs)
+    def delete(self, path, **kwargs): return self.request("DELETE", path, **kwargs)
+
+
+def client() -> ApiClient: return ApiClient()
+
+
+def create_project(api: ApiClient, name: str = "Launch plan") -> dict:
     response = api.post("/api/projects", json={"name": name, "description": "Ship the MVP"})
     assert response.status_code == 201
     return response.json()
 
 
-def test_development_seed_is_available_for_the_integrated_frontend() -> None:
-    api = client()
+@pytest.mark.anyio
+async def test_development_seed_is_available_for_the_integrated_frontend() -> None:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as api:
 
-    response = api.get("/api/projects")
+        response = await api.get("/api/projects")
 
-    assert response.status_code == 200
-    project = next(project for project in response.json() if project["name"] == "Tasklane Development")
-    board = api.get(f"/api/projects/{project['id']}/board").json()
-    assert [column["name"] for column in board["columns"]] == ["Backlog", "To Do", "In Progress", "Review", "Done"]
-    assert board["tasks"]
+        assert response.status_code == 200
+        project = next(project for project in response.json() if project["name"] == "Tasklane Development")
+        board = (await api.get(f"/api/projects/{project['id']}/board")).json()
+        assert [column["name"] for column in board["columns"]] == ["Backlog", "To Do", "In Progress", "Review", "Done"]
+        assert board["tasks"]
 
 
 def test_projects_have_default_workflow_and_board_projection() -> None:
