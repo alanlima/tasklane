@@ -42,6 +42,8 @@ let database = {
   ],
 };
 
+const initialDatabase = structuredClone(database);
+
 const projectSummary = (project) => {
   const done = project.columns.find((column) => column.name.toLowerCase() === "done");
   const completed = done ? project.tasks.filter((task) => task.columnId === done.id).length : 0;
@@ -53,6 +55,7 @@ const getProject = (projectId) => database.projects.find((project) => project.id
 
 // This module is the only boundary React code uses for backend-shaped calls.
 export const api = {
+  reset: () => { database = structuredClone(initialDatabase); },
   listProjects: () => pause(database.projects.map(projectSummary)),
   getBoard: (projectId) => pause(getProject(projectId)),
   createProject: async ({ name, description }) => {

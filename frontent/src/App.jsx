@@ -1,67 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Calendar, Check, ChevronLeft, ChevronRight, CirclePlus, GripVertical, MoreHorizontal, Plus, Tag, X } from "lucide-react";
-import { api } from "./services/mockApi";
-
-const priorities = ["None", "Low", "Medium", "High", "Urgent"];
-
-function Modal({ title, children, onClose }) {
-  return <div className="scrim" onMouseDown={onClose}><section className="modal" onMouseDown={(event) => event.stopPropagation()}><button className="icon-button close" onClick={onClose} aria-label="Close"><X size={18} /></button><h2>{title}</h2>{children}</section></div>;
-}
-
-function Progress({ value }) { return <div className="progress"><span style={{ width: `${value}%` }} /></div>; }
-
-function Projects({ projects, onOpen, onCreate }) {
-  const [isCreating, setCreating] = useState(false);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const submit = async (event) => { event.preventDefault(); if (!name.trim()) return; const project = await onCreate({ name: name.trim(), description: description.trim() }); setCreating(false); setName(""); setDescription(""); onOpen(project.id); };
-  return <main className="page dashboard"><div className="page-heading"><div><p className="eyebrow">Workspace</p><h1>Projects</h1><p>Organise your work into focused boards.</p></div><button className="primary-button" onClick={() => setCreating(true)}><Plus size={17} /> New project</button></div>{projects.length ? <div className="project-grid">{projects.map((project) => <button className="project-card" key={project.id} onClick={() => onOpen(project.id)}><div className="project-card-top"><div><h2>{project.name}</h2><p>{project.description || "No description"}</p></div><MoreHorizontal size={18} /></div><div className="project-stats"><span>{project.totalTasks} tasks</span><span>{project.completedTasks} completed</span></div><Progress value={project.completion} /><div className="project-footer"><strong>{project.completion}%</strong><span>Updated {project.updatedAt}</span></div></button>)}</div> : <div className="empty-state"><CirclePlus size={30} /><h2>Your workspace is empty</h2><p>Create your first project and start moving work forward.</p><button className="primary-button" onClick={() => setCreating(true)}>Create project</button></div>}{isCreating && <Modal title="New project" onClose={() => setCreating(false)}><form onSubmit={submit} className="form-stack"><label>Project name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Website redesign" /></label><label>Description <em>optional</em><textarea value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What is this project for?" /></label><button className="primary-button" type="submit">Create project</button></form></Modal>}</main>;
-}
-
-function TaskCard({ task, labels, onOpen, onDragStart }) {
-  const done = task.checklist.filter((item) => item.done).length;
-  return <button draggable className="task-card" onDragStart={() => onDragStart(task.id)} onClick={() => onOpen(task.id)}><div className="task-title">{task.title}</div>{task.labelIds.length > 0 && <div className="label-row">{task.labelIds.map((labelId) => { const label = labels.find((item) => item.id === labelId); return label && <span className={`label label-${label.colour}`} key={label.id}>{label.name}</span>; })}</div>}<div className="task-meta">{task.priority !== "None" && <span className={`priority ${task.priority.toLowerCase()}`}>● {task.priority}</span>}{task.checklist.length > 0 && <span><Check size={13} /> {done}/{task.checklist.length}</span>}{task.points && <span className="points">◇ {task.points}</span>}{task.dueDate && <span><Calendar size={13} /> {new Date(`${task.dueDate}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>}</div></button>;
-}
-
-function TaskDrawer({ project, task, onClose, onSave }) {
-  const [draft, setDraft] = useState(task);
-  const [newItem, setNewItem] = useState("");
-  useEffect(() => setDraft(task), [task]);
-  const update = (patch) => setDraft((current) => ({ ...current, ...patch }));
-  const save = async (patch = draft) => { await onSave(task.id, patch); };
-  const toggleChecklist = (itemId) => { const checklist = draft.checklist.map((item) => item.id === itemId ? { ...item, done: !item.done } : item); update({ checklist }); save({ checklist }); };
-  const addItem = (event) => { event.preventDefault(); if (!newItem.trim()) return; const checklist = [...draft.checklist, { id: crypto.randomUUID(), title: newItem.trim(), done: false }]; update({ checklist }); save({ checklist }); setNewItem(""); };
-  const toggleLabel = (labelId) => { const labelIds = draft.labelIds.includes(labelId) ? draft.labelIds.filter((id) => id !== labelId) : [...draft.labelIds, labelId]; update({ labelIds }); save({ labelIds }); };
-  const completed = draft.checklist.filter((item) => item.done).length;
-  return <aside className="drawer"><div className="drawer-top"><span className="drawer-kicker">Task details</span><button className="icon-button" onClick={onClose} aria-label="Close task details"><X size={19} /></button></div><input className="drawer-title" value={draft.title} onChange={(event) => update({ title: event.target.value })} onBlur={() => save()} aria-label="Task title" /><div className="field-grid"><label>Status<select value={draft.columnId} onChange={(event) => { update({ columnId: event.target.value }); save({ columnId: event.target.value }); }}>{project.columns.map((column) => <option key={column.id} value={column.id}>{column.name}</option>)}</select></label><label>Priority<select value={draft.priority} onChange={(event) => { update({ priority: event.target.value }); save({ priority: event.target.value }); }}>{priorities.map((priority) => <option key={priority}>{priority}</option>)}</select></label><label>Story points<input type="number" min="0" value={draft.points ?? ""} onChange={(event) => update({ points: event.target.value ? Number(event.target.value) : null })} onBlur={() => save()} /></label><label>Due date<input type="date" value={draft.dueDate} onChange={(event) => { update({ dueDate: event.target.value }); save({ dueDate: event.target.value }); }} /></label></div><section className="drawer-section"><h3><Tag size={16} /> Labels</h3><div className="label-picker">{project.labels.length ? project.labels.map((label) => <button key={label.id} className={`label label-${label.colour} ${draft.labelIds.includes(label.id) ? "chosen" : ""}`} onClick={() => toggleLabel(label.id)}>{draft.labelIds.includes(label.id) && <Check size={12} />}{label.name}</button>) : <span className="muted">No labels in this project.</span>}</div></section><section className="drawer-section"><h3>Description</h3><textarea className="description" value={draft.description} onChange={(event) => update({ description: event.target.value })} onBlur={() => save()} placeholder="Add a more detailed description…" /></section><section className="drawer-section"><div className="section-title"><h3>Checklist</h3><span>{completed} / {draft.checklist.length}</span></div>{draft.checklist.map((item) => <label className="check-item" key={item.id}><input type="checkbox" checked={item.done} onChange={() => toggleChecklist(item.id)} /><span>{item.title}</span></label>)}<form className="new-check" onSubmit={addItem}><input value={newItem} onChange={(event) => setNewItem(event.target.value)} placeholder="Add an item" /><button aria-label="Add checklist item"><Plus size={16} /></button></form></section><div className="saved"><Check size={14} /> Saved</div></aside>;
-}
-
-function Board({ project, onBack, onRefresh }) {
-  const [activeTaskId, setActiveTaskId] = useState(null);
-  const [draggedTaskId, setDraggedTaskId] = useState(null);
-  const [newTaskColumn, setNewTaskColumn] = useState(null);
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newColumn, setNewColumn] = useState(false);
-  const [columnName, setColumnName] = useState("");
-  const task = project.tasks.find((item) => item.id === activeTaskId);
-  const completed = project.columns.find((column) => column.name.toLowerCase() === "done");
-  const completeCount = completed ? project.tasks.filter((item) => item.columnId === completed.id).length : 0;
-  const createTask = async (event) => { event.preventDefault(); if (!newTaskTitle.trim()) return; await api.createTask(project.id, { title: newTaskTitle.trim(), columnId: newTaskColumn }); setNewTaskTitle(""); setNewTaskColumn(null); onRefresh(); };
-  const drop = async (columnId) => { if (!draggedTaskId) return; const taskToMove = project.tasks.find((item) => item.id === draggedTaskId); if (taskToMove.columnId !== columnId) { const targetPosition = project.tasks.filter((item) => item.columnId === columnId).length; await api.moveTask(project.id, draggedTaskId, columnId, targetPosition); onRefresh(); } setDraggedTaskId(null); };
-  const moveColumn = async (index, direction) => { const destination = index + direction; if (destination < 0 || destination >= project.columns.length) return; await api.reorderColumns(project.id, index, destination); onRefresh(); };
-  const addColumn = async (event) => { event.preventDefault(); if (!columnName.trim()) return; await api.createColumn(project.id, columnName.trim()); setColumnName(""); setNewColumn(false); onRefresh(); };
-  const saveTask = async (taskId, patch) => { await api.updateTask(project.id, taskId, patch); onRefresh(); };
-  return <main className="board-page"><div className="board-heading"><button className="back-link" onClick={onBack}><ArrowLeft size={17} /> Projects</button><div className="board-title-row"><div><p className="eyebrow">Project board</p><h1>{project.name}</h1><p>{project.tasks.length} tasks · {completeCount} completed</p></div><button className="primary-button" onClick={() => setNewTaskColumn(project.columns[0]?.id)}><Plus size={17} /> Add task</button></div></div><div className="board-scroll"><div className="board-columns">{project.columns.map((column, index) => { const tasks = project.tasks.filter((item) => item.columnId === column.id).sort((a, b) => a.position - b.position); return <section className="kanban-column" key={column.id} onDragOver={(event) => event.preventDefault()} onDrop={() => drop(column.id)}><header className="column-heading"><div><span className="column-dot" /><strong>{column.name}</strong><span className="count">{tasks.length}</span></div><div className="column-actions"><button className="tiny-button" aria-label={`Move ${column.name} left`} onClick={() => moveColumn(index, -1)}><ChevronLeft size={15} /></button><button className="tiny-button" aria-label={`Move ${column.name} right`} onClick={() => moveColumn(index, 1)}><ChevronRight size={15} /></button></div></header><div className="task-stack">{tasks.map((card) => <TaskCard key={card.id} task={card} labels={project.labels} onOpen={setActiveTaskId} onDragStart={setDraggedTaskId} />)}{tasks.length === 0 && <div className="column-empty">Drop tasks here</div>}</div><button className="add-task-link" onClick={() => setNewTaskColumn(column.id)}><Plus size={15} /> Add task</button></section>; })}<section className="new-column"><button onClick={() => setNewColumn(true)}><Plus size={16} /> Add column</button></section></div></div>{newTaskColumn && <Modal title="Add task" onClose={() => setNewTaskColumn(null)}><form className="form-stack" onSubmit={createTask}><label>Task title<input autoFocus value={newTaskTitle} onChange={(event) => setNewTaskTitle(event.target.value)} placeholder="What needs to be done?" /></label><button className="primary-button">Create task</button></form></Modal>}{newColumn && <Modal title="Add column" onClose={() => setNewColumn(false)}><form className="form-stack" onSubmit={addColumn}><label>Column name<input autoFocus value={columnName} onChange={(event) => setColumnName(event.target.value)} placeholder="e.g. Testing" /></label><button className="primary-button">Add column</button></form></Modal>}{task && <TaskDrawer project={project} task={task} onClose={() => setActiveTaskId(null)} onSave={saveTask} />}</main>;
-}
+import { useTasklane } from "./hooks/useTasklane";
+import { AppHeader } from "./components/layout/AppHeader";
+import { ProjectsPage } from "./pages/ProjectsPage";
+import { BoardPage } from "./pages/BoardPage";
 
 export default function App() {
-  const [projects, setProjects] = useState([]);
-  const [project, setProject] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const refreshProjects = async () => { const result = await api.listProjects(); setProjects(result); };
-  const openProject = async (projectId) => { setLoading(true); setProject(await api.getBoard(projectId)); setLoading(false); };
-  const refreshBoard = async () => { if (project) setProject(await api.getBoard(project.id)); await refreshProjects(); };
-  useEffect(() => { refreshProjects().finally(() => setLoading(false)); }, []);
-  if (loading && !project && !projects.length) return <div className="app-loading">Loading Tasklane…</div>;
-  return <><header className="app-header"><button className="brand" onClick={() => { setProject(null); refreshProjects(); }}>Task<span>lane</span></button><span className="header-caption">A calmer way to move work forward</span></header>{project ? <Board project={project} onBack={() => { setProject(null); refreshProjects(); }} onRefresh={refreshBoard} /> : <Projects projects={projects} onOpen={openProject} onCreate={async (details) => { const created = await api.createProject(details); await refreshProjects(); return created; }} />}</>;
+  const tasklane = useTasklane();
+  if (tasklane.isLoading) return <div className="app-loading">Loading Tasklane…</div>;
+  return <><AppHeader onHome={tasklane.showProjects} />{tasklane.project
+    ? <BoardPage project={tasklane.project} onBack={tasklane.showProjects} onRefresh={tasklane.refreshBoard} />
+    : <ProjectsPage projects={tasklane.projects} onOpen={tasklane.openProject} onCreate={tasklane.createProject} />}</>;
 }

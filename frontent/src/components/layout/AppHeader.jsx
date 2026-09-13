@@ -1,0 +1,1 @@
+export function AppHeader({ onHome }) { return <header className="app-header"><button className="brand" onClick={onHome}>Task<span>lane</span></button><span className="header-caption">A calmer way to move work forward</span></header>; }
