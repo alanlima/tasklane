@@ -1,40 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
-import App from "./App";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "./services/mockApi";
 
-async function renderApp() {
-  render(<App />);
-  await screen.findByRole("heading", { name: "Projects" });
-}
-
-describe("Tasklane frontend", () => {
-  beforeEach(() => api.reset());
-  afterEach(cleanup);
-
-  it("creates a project and opens its board", async () => {
-    const user = userEvent.setup();
-    await renderApp();
-    await user.click(screen.getByRole("button", { name: "New project" }));
-    await user.type(screen.getByLabelText("Project name"), "Launch plan");
-    await user.click(screen.getByRole("button", { name: "Create project" }));
-    expect(await screen.findByText("Project board")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Launch plan" })).toBeInTheDocument();
+describe("frontend API service", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it("loads and maps project summaries from the backend contract", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => [{ id: "p1", name: "Tasklane", updated_at: "2026-09-13T00:00:00Z", total_tasks: 2, completed_tasks: 1, completion_percentage: 50 }] });
+    vi.stubGlobal("fetch", fetch);
+    await expect(api.listProjects()).resolves.toMatchObject([{ id: "p1", totalTasks: 2, completedTasks: 1, completion: 50 }]);
+    expect(fetch).toHaveBeenCalledWith("/api/projects", expect.any(Object));
   });
-
-  it("opens a board, creates a task, and exposes task details", async () => {
-    const user = userEvent.setup();
-    await renderApp();
-    await user.click(screen.getByRole("button", { name: /Tasklane Development/ }));
-    expect(await screen.findByText("Project board")).toBeInTheDocument();
-    await user.click(screen.getAllByRole("button", { name: "Add task" })[0]);
-    await user.type(screen.getByLabelText("Task title"), "Write launch notes");
-    await user.click(screen.getByRole("button", { name: "Create task" }));
-    expect(await screen.findByText("Write launch notes")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Build project dashboard/ }));
-    expect(await screen.findByText("Task details")).toBeInTheDocument();
-    const drawer = screen.getByText("Task details").closest("aside");
-    expect(within(drawer).getByLabelText("Priority")).toHaveValue("High");
+  it("creates and updates checklist items through the backend contract", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ id: "item-1", title: "Connect UI", is_completed: false }) }).mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: "item-1", title: "Connect UI", is_completed: true }) });
+    vi.stubGlobal("fetch", fetch);
+    await expect(api.createChecklistItem("task-1", "Connect UI")).resolves.toMatchObject({ id: "item-1", done: false });
+    await expect(api.updateChecklistItem("item-1", { done: true })).resolves.toMatchObject({ done: true });
+    expect(fetch).toHaveBeenNthCalledWith(1, "/api/tasks/task-1/checklist", expect.objectContaining({ method: "POST" }));
+    expect(fetch).toHaveBeenNthCalledWith(2, "/api/checklist/item-1", expect.objectContaining({ method: "PATCH" }));
   });
 });

@@ -1,102 +1,21 @@
-const pause = (value, delay = 160) => new Promise((resolve) => setTimeout(() => resolve(structuredClone(value)), delay));
+const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
+const request = async (path, options = {}) => { const response = await fetch(`${baseUrl}${path}`, { headers: { "Content-Type": "application/json" }, ...options }); if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail ?? "Request failed"); return response.status === 204 ? null : response.json(); };
 const id = () => crypto.randomUUID();
+const priority = (value) => value === "NONE" ? "None" : value.charAt(0) + value.slice(1).toLowerCase();
+const mapTask = (task) => ({ ...task, columnId: task.column_id, labelIds: task.label_ids, points: task.story_points, dueDate: task.due_date ?? "", priority: priority(task.priority), checklist: task.checklist.map((item) => ({ ...item, done: item.is_completed })) });
+const mapChecklistItem = (item) => ({ ...item, done: item.is_completed });
+const mapBoard = (board) => ({ ...board.project, updatedAt: new Date(board.project.updated_at).toLocaleDateString(), columns: board.columns, labels: board.labels, tasks: board.tasks.map(mapTask) });
+const mapSummary = (project) => ({ ...project, updatedAt: new Date(project.updated_at).toLocaleDateString(), totalTasks: project.total_tasks, completedTasks: project.completed_tasks, completion: project.completion_percentage });
 
-let database = {
-  projects: [
-    {
-      id: "project-development",
-      name: "Tasklane Development",
-      description: "A focused MVP board for building Tasklane.",
-      updatedAt: "Just now",
-      columns: [
-        { id: "backlog", name: "Backlog" },
-        { id: "todo", name: "To Do" },
-        { id: "progress", name: "In Progress" },
-        { id: "review", name: "Review" },
-        { id: "done", name: "Done" },
-      ],
-      labels: [
-        { id: "label-frontend", name: "Frontend", colour: "indigo" },
-        { id: "label-backend", name: "Backend", colour: "green" },
-        { id: "label-ux", name: "UX", colour: "amber" },
-      ],
-      tasks: [
-        { id: "task-1", columnId: "backlog", position: 0, title: "Sketch empty states", priority: "Medium", points: 2, dueDate: "2026-09-18", labelIds: ["label-ux"], description: "Design intentional project and board empty states.", checklist: [{ id: "c1", title: "Dashboard empty state", done: true }, { id: "c2", title: "Column empty state", done: false }] },
-        { id: "task-2", columnId: "todo", position: 0, title: "Build project dashboard", priority: "High", points: 5, dueDate: "2026-09-20", labelIds: ["label-frontend", "label-ux"], description: "Create the projects overview with progress and quick creation.", checklist: [{ id: "c3", title: "Project cards", done: true }, { id: "c4", title: "Progress indicator", done: false }, { id: "c5", title: "New project modal", done: false }] },
-        { id: "task-3", columnId: "progress", position: 0, title: "Create board action queue", priority: "High", points: 8, dueDate: "2026-09-23", labelIds: ["label-backend"], description: "Persist movement commands before acknowledgement.", checklist: [{ id: "c6", title: "Action model", done: true }, { id: "c7", title: "Worker recovery", done: false }] },
-        { id: "task-4", columnId: "done", position: 0, title: "Define Tasklane palette", priority: "Low", points: 1, dueDate: "2026-09-14", labelIds: ["label-ux"], description: "Establish the warm neutral visual language.", checklist: [] },
-      ],
-    },
-    {
-      id: "project-website",
-      name: "Personal Website",
-      description: "A small refresh of the portfolio site.",
-      updatedAt: "Yesterday",
-      columns: [{ id: "ideas", name: "Ideas" }, { id: "doing", name: "Doing" }, { id: "finished", name: "Done" }],
-      labels: [],
-      tasks: [
-        { id: "website-1", columnId: "ideas", position: 0, title: "Collect inspiration", priority: "None", points: null, dueDate: "", labelIds: [], description: "", checklist: [] },
-        { id: "website-2", columnId: "finished", position: 0, title: "Choose typography", priority: "Low", points: 1, dueDate: "", labelIds: [], description: "", checklist: [] },
-      ],
-    },
-  ],
-};
-
-const initialDatabase = structuredClone(database);
-
-const projectSummary = (project) => {
-  const done = project.columns.find((column) => column.name.toLowerCase() === "done");
-  const completed = done ? project.tasks.filter((task) => task.columnId === done.id).length : 0;
-  return { ...project, totalTasks: project.tasks.length, completedTasks: completed, completion: project.tasks.length ? Math.round((completed / project.tasks.length) * 100) : 0 };
-};
-
-const reindex = (project, columnId) => project.tasks.filter((task) => task.columnId === columnId).sort((a, b) => a.position - b.position).forEach((task, index) => { task.position = index; });
-const getProject = (projectId) => database.projects.find((project) => project.id === projectId);
-
-// This module is the only boundary React code uses for backend-shaped calls.
+// The only HTTP boundary used by React components.
 export const api = {
-  reset: () => { database = structuredClone(initialDatabase); },
-  listProjects: () => pause(database.projects.map(projectSummary)),
-  getBoard: (projectId) => pause(getProject(projectId)),
-  createProject: async ({ name, description }) => {
-    const project = { id: id(), name, description, updatedAt: "Just now", columns: ["Backlog", "To Do", "In Progress", "Done"].map((column) => ({ id: id(), name: column })), labels: [], tasks: [] };
-    database.projects.unshift(project);
-    return pause(project);
-  },
-  createTask: async (projectId, { title, columnId }) => {
-    const project = getProject(projectId);
-    const task = { id: id(), title, columnId, position: project.tasks.filter((item) => item.columnId === columnId).length, priority: "None", points: null, dueDate: "", labelIds: [], description: "", checklist: [] };
-    project.tasks.push(task);
-    return pause(task);
-  },
-  updateTask: async (projectId, taskId, patch) => {
-    const task = getProject(projectId).tasks.find((item) => item.id === taskId);
-    Object.assign(task, patch);
-    return pause(task);
-  },
-  moveTask: async (projectId, taskId, targetColumnId, targetPosition) => {
-    const project = getProject(projectId);
-    const task = project.tasks.find((item) => item.id === taskId);
-    const oldColumnId = task.columnId;
-    task.columnId = targetColumnId;
-    task.position = targetPosition;
-    reindex(project, oldColumnId);
-    reindex(project, targetColumnId);
-    return pause({ actionId: id(), status: "COMPLETED" });
-  },
-  createColumn: async (projectId, name) => {
-    const column = { id: id(), name };
-    getProject(projectId).columns.push(column);
-    return pause(column);
-  },
-  renameColumn: async (projectId, columnId, name) => {
-    getProject(projectId).columns.find((column) => column.id === columnId).name = name;
-    return pause({ columnId, name });
-  },
-  reorderColumns: async (projectId, sourceIndex, destinationIndex) => {
-    const columns = getProject(projectId).columns;
-    const [column] = columns.splice(sourceIndex, 1);
-    columns.splice(destinationIndex, 0, column);
-    return pause(columns);
-  },
+  reset: () => {}, listProjects: async () => (await request("/api/projects")).map(mapSummary), getBoard: async (projectId) => mapBoard(await request(`/api/projects/${projectId}/board`)),
+  createProject: ({ name, description }) => request("/api/projects", { method: "POST", body: JSON.stringify({ name, description }) }),
+  createTask: async (projectId, { title, columnId }) => mapTask(await request(`/api/projects/${projectId}/tasks`, { method: "POST", body: JSON.stringify({ title, column_id: columnId }) })),
+  updateTask: async (projectId, taskId, patch) => { if (patch.columnId) return api.moveTask(projectId, taskId, patch.columnId, 0); const payload = { ...patch, priority: patch.priority?.toUpperCase(), story_points: patch.points, due_date: patch.dueDate || null, label_ids: patch.labelIds }; delete payload.points; delete payload.dueDate; delete payload.labelIds; return mapTask(await request(`/api/tasks/${taskId}`, { method: "PATCH", body: JSON.stringify(payload) })); },
+  moveTask: (projectId, taskId, targetColumnId, targetPosition) => request(`/api/projects/${projectId}/actions/move-task`, { method: "POST", body: JSON.stringify({ task_id: taskId, target_column_id: targetColumnId, target_position: targetPosition, idempotency_key: id() }) }),
+  createColumn: (projectId, name) => request(`/api/projects/${projectId}/columns`, { method: "POST", body: JSON.stringify({ name }) }),
+  createChecklistItem: async (taskId, title) => mapChecklistItem(await request(`/api/tasks/${taskId}/checklist`, { method: "POST", body: JSON.stringify({ title }) })),
+  updateChecklistItem: async (itemId, patch) => { const payload = { ...patch, is_completed: patch.done }; delete payload.done; return mapChecklistItem(await request(`/api/checklist/${itemId}`, { method: "PATCH", body: JSON.stringify(payload) })); },
+  reorderColumns: async (projectId, sourceIndex, destinationIndex) => { const board = await api.getBoard(projectId); return request(`/api/projects/${projectId}/actions/move-column`, { method: "POST", body: JSON.stringify({ column_id: board.columns[sourceIndex].id, target_position: destinationIndex, idempotency_key: id() }) }); },
 };
