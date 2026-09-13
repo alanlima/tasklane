@@ -5,8 +5,8 @@ import { ProjectSettingsPage } from "./ProjectSettingsPage";
 
 const project = { id: "project-1", name: "Launch", description: "Ship it", labels: [{ id: "label-1", name: "Frontend", colour: "#6574C9" }] };
 
-function renderSettings(onLabels = vi.fn()) {
-  render(<ProjectSettingsPage project={project} onBack={vi.fn()} onSave={vi.fn()} onLabels={onLabels} />);
+function renderSettings(onLabels = vi.fn(), lifecycle = {}) {
+  render(<ProjectSettingsPage project={project} onBack={vi.fn()} onSave={vi.fn()} onLabels={onLabels} onGetArchiveSummary={lifecycle.onGetArchiveSummary ?? vi.fn().mockResolvedValue({ total_tasks: 3, completed_tasks: 1, incomplete_tasks: 2 })} onArchive={lifecycle.onArchive ?? vi.fn()} onRestore={lifecycle.onRestore ?? vi.fn()} onDelete={lifecycle.onDelete ?? vi.fn()} />);
 }
 
 describe("ProjectSettingsPage label mutations", () => {
@@ -36,5 +36,28 @@ describe("ProjectSettingsPage label mutations", () => {
 
     await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("previous name was restored"));
     expect(renameInput).toHaveValue("Frontend");
+  });
+
+  it("shows incomplete task counts and requires an archive confirmation", async () => {
+    const user = userEvent.setup(); const onGetArchiveSummary = vi.fn().mockResolvedValue({ total_tasks: 3, completed_tasks: 1, incomplete_tasks: 2 }); const onArchive = vi.fn().mockResolvedValue();
+    renderSettings(vi.fn(), { onGetArchiveSummary, onArchive });
+
+    await user.click(screen.getAllByRole("button", { name: "Archive project" })[0]);
+    expect(await screen.findByText("2 incomplete of 3 tasks will remain on this read-only board.")).toBeInTheDocument();
+    await user.click(screen.getAllByRole("button", { name: "Archive project" })[1]);
+    expect(onGetArchiveSummary).toHaveBeenCalledOnce();
+    expect(onArchive).toHaveBeenCalledOnce();
+  });
+
+  it("requires the exact project name before permanent deletion", async () => {
+    const user = userEvent.setup(); const onDelete = vi.fn().mockResolvedValue();
+    renderSettings(vi.fn(), { onDelete });
+
+    await user.click(screen.getByRole("button", { name: "Delete permanently" }));
+    const deleteButton = screen.getAllByRole("button", { name: "Delete permanently" })[1];
+    expect(deleteButton).toBeDisabled();
+    await user.type(screen.getAllByRole("textbox", { name: "Project name" })[1], "Launch");
+    await user.click(deleteButton);
+    expect(onDelete).toHaveBeenCalledWith("Launch");
   });
 });

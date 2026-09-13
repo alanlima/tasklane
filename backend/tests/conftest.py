@@ -15,7 +15,9 @@ def isolated_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     from app import main
     from app.database import DatabaseRepository
     from app.label_service import LabelService
+    from app.project_service import ProjectService
     from app.repository import MockRepository
     main.repository = DatabaseRepository(MockRepository())
     main.label_service = LabelService(main.repository)
+    main.project_service = ProjectService(main.repository)
     yield

@@ -9,9 +9,13 @@ const mapSummary = (project) => ({ ...project, updatedAt: new Date(project.updat
 
 // The only HTTP boundary used by React components.
 export const api = {
-  reset: () => {}, listProjects: async () => (await request("/api/projects")).map(mapSummary), getBoard: async (projectId) => mapBoard(await request(`/api/projects/${projectId}/board`)),
+  reset: () => {}, listProjects: async (includeArchived = false) => (await request(`/api/projects${includeArchived ? "?include_archived=true" : ""}`)).map(mapSummary), getBoard: async (projectId) => mapBoard(await request(`/api/projects/${projectId}/board`)),
   createProject: ({ name, description }) => request("/api/projects", { method: "POST", body: JSON.stringify({ name, description }) }),
   updateProject: (projectId, { name, description }) => request(`/api/projects/${projectId}`, { method: "PATCH", body: JSON.stringify({ name, description: description || null }) }),
+  getArchiveSummary: (projectId) => request(`/api/projects/${projectId}/archive-summary`),
+  archiveProject: (projectId, confirmIncomplete) => request(`/api/projects/${projectId}/archive`, { method: "POST", body: JSON.stringify({ confirm_incomplete: confirmIncomplete }) }),
+  restoreProject: (projectId) => request(`/api/projects/${projectId}/restore`, { method: "POST" }),
+  deleteProject: (projectId, confirmationName) => request(`/api/projects/${projectId}`, { method: "DELETE", body: JSON.stringify({ confirmation_name: confirmationName }) }),
   createLabel: (projectId, name) => request(`/api/projects/${projectId}/labels`, { method: "POST", body: JSON.stringify({ name }) }),
   updateLabel: (labelId, name, colour) => request(`/api/labels/${labelId}`, { method: "PATCH", body: JSON.stringify({ name, colour }) }),
   deleteLabel: (labelId) => request(`/api/labels/${labelId}`, { method: "DELETE" }),

@@ -57,7 +57,7 @@ class MockRepository:
 
     def create_project(self, name: str, description: str | None) -> dict:
         timestamp = now()
-        project = {"id": new_id(), "name": name, "description": description, "created_at": timestamp, "updated_at": timestamp}
+        project = {"id": new_id(), "name": name, "description": description, "is_archived": False, "archived_at": None, "created_at": timestamp, "updated_at": timestamp}
         self.projects[project["id"]] = project
         for position, column_name in enumerate(("Backlog", "To Do", "In Progress", "Done")):
             self.create_column(project["id"], column_name, position)

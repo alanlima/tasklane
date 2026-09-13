@@ -136,15 +136,38 @@ def test_task_checklist_and_label_can_be_updated_and_deleted() -> None:
     assert api.get(f"/api/tasks/{task['id']}").json()["label_ids"] == []
 
 
-def test_project_deletion_removes_its_board_and_validation_rejects_cross_project_ids() -> None:
+def test_project_deletion_removes_its_board_and_requires_exact_name() -> None:
     api = client(); first = create_project(api, "First"); second = create_project(api, "Second")
     first_board = api.get(f"/api/projects/{first['id']}/board").json(); second_board = api.get(f"/api/projects/{second['id']}/board").json()
     task = api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": first_board["columns"][0]["id"], "title": "Keep isolated"}).json()
     assert api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": second_board["columns"][0]["id"], "title": "Invalid"}).status_code == 409
     assert api.post(f"/api/projects/{first['id']}/actions/move-task", json={"task_id": task["id"], "target_column_id": second_board["columns"][0]["id"], "target_position": 0, "idempotency_key": "cross-project"}).status_code == 409
-    assert api.delete(f"/api/projects/{first['id']}").status_code == 204
+    assert api.delete(f"/api/projects/{first['id']}", json={"confirmation_name": "not the name"}).status_code == 409
+    assert api.delete(f"/api/projects/{first['id']}", json={"confirmation_name": "First"}).status_code == 204
     assert api.get(f"/api/projects/{first['id']}").status_code == 404
     assert api.get(f"/api/tasks/{task['id']}").status_code == 404
+
+
+def test_project_archive_requires_confirmation_hides_dashboard_and_enforces_read_only() -> None:
+    api = client(); project = create_project(api, "Archive me"); board = api.get(f"/api/projects/{project['id']}/board").json()
+    api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Still open"})
+
+    summary = api.get(f"/api/projects/{project['id']}/archive-summary")
+    assert summary.json() == {"total_tasks": 1, "completed_tasks": 0, "incomplete_tasks": 1}
+    blocked = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False})
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["incomplete_tasks"] == 1
+
+    archived = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+    assert archived.status_code == 200
+    assert archived.json()["is_archived"] is True
+    assert project["id"] not in {item["id"] for item in api.get("/api/projects").json()}
+    assert project["id"] in {item["id"] for item in api.get("/api/projects?include_archived=true").json()}
+    assert api.get(f"/api/projects/{project['id']}/board").status_code == 200
+    assert api.patch(f"/api/projects/{project['id']}", json={"name": "Nope"}).status_code == 409
+    assert api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Nope"}).status_code == 409
+    assert api.post(f"/api/projects/{project['id']}/restore").json()["is_archived"] is False
+    assert api.patch(f"/api/projects/{project['id']}", json={"name": "Active again"}).status_code == 200
 
 
 def test_populated_column_requires_destination_and_columns_can_be_reordered() -> None:
