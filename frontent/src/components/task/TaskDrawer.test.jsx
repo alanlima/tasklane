@@ -44,4 +44,14 @@ describe("TaskDrawer labels", () => {
     expect(props.onCreateLabel).toHaveBeenCalledWith("Design");
     expect(props.onSave).toHaveBeenCalledWith("task-1", { labelIds: ["label-2"] });
   });
+
+  it("shows an actionable error when creating a label fails", async () => {
+    const user = userEvent.setup();
+    renderDrawer({ onCreateLabel: vi.fn().mockRejectedValue(new Error("offline")) });
+
+    await user.type(screen.getByRole("textbox", { name: "Search labels" }), "Design");
+    await user.click(screen.getByRole("button", { name: "Create “Design”" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not create and add that label");
+  });
 });
