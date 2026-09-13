@@ -29,7 +29,7 @@ class TaskCreate(BaseModel): column_id: str; title: str = Field(min_length=1, ma
 class TaskUpdate(BaseModel): title: str | None = Field(default=None, min_length=1, max_length=240); description: str | None = None; priority: str | None = None; story_points: int | None = Field(default=None, ge=0); due_date: date | None = None; label_ids: list[str] | None = None
 class ChecklistCreate(BaseModel): title: str = Field(min_length=1, max_length=240)
 class ChecklistUpdate(BaseModel): title: str | None = Field(default=None, min_length=1, max_length=240); is_completed: bool | None = None; position: int | None = Field(default=None, ge=0)
-class LabelCreate(BaseModel): name: str = Field(min_length=1, max_length=60); colour: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+class LabelCreate(BaseModel): name: str = Field(min_length=1, max_length=60); colour: str | None = Field(default=None, pattern=r"^#[0-9A-Fa-f]{6}$")
 class MoveTask(BaseModel): task_id: str; target_column_id: str; target_position: int = Field(ge=0); idempotency_key: str
 class MoveColumn(BaseModel): column_id: str; target_position: int = Field(ge=0); idempotency_key: str
 
@@ -129,7 +129,7 @@ def delete_checklist(item_id: str) -> Response:
 def list_labels(project_id: str) -> list[dict]: project_or_404(project_id); return [repository.copy(label) for label in repository.labels.values() if label["project_id"] == project_id]
 @app.post("/api/projects/{project_id}/labels", status_code=201)
 def create_label(project_id: str, payload: LabelCreate) -> dict:
-    project_or_404(project_id); label = {"id": new_id(), "project_id": project_id, "name": payload.name, "colour": payload.colour, "created_at": now()}; repository.labels[label["id"]] = label; return repository.copy(label)
+    project_or_404(project_id); palette = ("#6574C9", "#35685B", "#C38B3B", "#C75F5F", "#6582A7"); used = {label["colour"] for label in repository.labels.values() if label["project_id"] == project_id}; colour = payload.colour or next((item for item in palette if item not in used), palette[len(used) % len(palette)]); label = {"id": new_id(), "project_id": project_id, "name": payload.name, "colour": colour, "created_at": now()}; repository.labels[label["id"]] = label; return repository.copy(label)
 @app.patch("/api/labels/{label_id}")
 def update_label(label_id: str, payload: LabelCreate) -> dict: label = label_or_404(label_id); label.update(payload.model_dump()); return repository.copy(label)
 @app.delete("/api/labels/{label_id}", status_code=204)
