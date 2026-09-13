@@ -11,6 +11,7 @@ const mapSummary = (project) => ({ ...project, updatedAt: new Date(project.updat
 export const api = {
   reset: () => {}, listProjects: async () => (await request("/api/projects")).map(mapSummary), getBoard: async (projectId) => mapBoard(await request(`/api/projects/${projectId}/board`)),
   createProject: ({ name, description }) => request("/api/projects", { method: "POST", body: JSON.stringify({ name, description }) }),
+  updateProject: (projectId, { name, description }) => request(`/api/projects/${projectId}`, { method: "PATCH", body: JSON.stringify({ name, description: description || null }) }),
   createTask: async (projectId, { title, columnId }) => mapTask(await request(`/api/projects/${projectId}/tasks`, { method: "POST", body: JSON.stringify({ title, column_id: columnId }) })),
   updateTask: async (projectId, taskId, patch) => {
     if (Object.keys(patch).length === 1 && "columnId" in patch) return api.moveTask(projectId, taskId, patch.columnId, 0);

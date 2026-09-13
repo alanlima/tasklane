@@ -8,6 +8,7 @@ export function useTasklane() {
   const refreshBoard = useCallback(async () => { if (project) setProject(await api.getBoard(project.id)); await refreshProjects(); }, [project, refreshProjects]);
   const showProjects = useCallback(() => { setProject(null); refreshProjects(); }, [refreshProjects]);
   const createProject = useCallback(async (details) => { const created = await api.createProject(details); await refreshProjects(); return created; }, [refreshProjects]);
+  const updateProject = useCallback(async (details) => { if (!project) return null; const updated = await api.updateProject(project.id, details); await refreshBoard(); return updated; }, [project, refreshBoard]);
   useEffect(() => { refreshProjects().finally(() => setLoading(false)); }, [refreshProjects]);
-  return { projects, project, isLoading, error, openProject, refreshBoard, showProjects, createProject };
+  return { projects, project, isLoading, error, openProject, refreshBoard, showProjects, createProject, updateProject };
 }

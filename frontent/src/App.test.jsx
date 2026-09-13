@@ -27,4 +27,10 @@ describe("frontend API service", () => {
     expect(fetch).toHaveBeenNthCalledWith(1, "/api/tasks/task-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ title: "Updated title" }) }));
     expect(fetch).toHaveBeenNthCalledWith(2, "/api/tasks/task-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ priority: "HIGH" }) }));
   });
+  it("updates project details through the project endpoint", async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: "project-1", name: "Updated", description: "Refined" }) });
+    vi.stubGlobal("fetch", fetch);
+    await api.updateProject("project-1", { name: "Updated", description: "Refined" });
+    expect(fetch).toHaveBeenCalledWith("/api/projects/project-1", expect.objectContaining({ method: "PATCH", body: JSON.stringify({ name: "Updated", description: "Refined" }) }));
+  });
 });
