@@ -85,3 +85,19 @@ it("uses post-recovery archive counts when the follow-up list fails", async () =
   await act(() => result.current.archiveProject(true));
   expect(result.current.archivedProjects).toMatchObject([{ totalTasks: 1, completedTasks: 1, completion: 100 }]);
 });
+
+it("ignores an old board refresh failure after another project opens", async () => {
+  vi.spyOn(api, "listProjects").mockResolvedValue([]);
+  vi.spyOn(api, "getBoard").mockImplementation(async (id) => ({ id, tasks: [], columns: [] }));
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  let reject;
+  api.getBoard.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+  let refresh;
+  act(() => { refresh = result.current.refreshBoard(); });
+  await act(() => result.current.openProject("b"));
+  await act(async () => { reject(new Error("old board unavailable")); await expect(refresh).resolves.toBeUndefined(); });
+  expect(result.current.project.id).toBe("b");
+  expect(result.current.boardError).toBeNull();
+});

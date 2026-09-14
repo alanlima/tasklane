@@ -46,8 +46,16 @@ export function useTasklane(initialProjectId) {
   const refreshBoard = useCallback(async () => {
     if (project && selectedProjectId.current === project.id && (routeProjectId.current === undefined || routeProjectId.current === project.id)) {
       const version = ++boardVersion.current;
-      const board = await api.getBoard(project.id);
-      if (version === boardVersion.current) setProject((current) => current?.id === project.id ? board : current);
+      try {
+        const board = await api.getBoard(project.id);
+        if (version !== boardVersion.current) return;
+        setProject((current) => current?.id === project.id ? board : current);
+        setBoardError(null);
+      } catch (requestError) {
+        if (version !== boardVersion.current) return;
+        setBoardError({ projectId: project.id, status: requestError.status, message: requestError.status === 404 ? "This project was deleted or does not exist. Return to Projects to choose another board." : "Check your connection and try again, or return to Projects." });
+        return;
+      }
     }
     await refreshProjects();
   }, [project, refreshProjects]);
