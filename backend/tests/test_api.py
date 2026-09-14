@@ -302,3 +302,37 @@ def test_archive_advances_failed_action_to_retry_limit_without_restart() -> None
     api.post(f"/api/projects/{project['id']}/restore")
     main.recover_actions()
     assert action["attempt_count"] == 5
+
+
+def test_archive_waits_for_live_action_without_processing_it_twice(monkeypatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Live move", "column_id": board["columns"][0]["id"]}).json()
+    entered, release, archive_started = Event(), Event(), Event()
+    original = main.project_service.ensure_writable
+    def pause_worker(project_id):
+        if any(action["status"] == "PROCESSING" for action in main.repository.actions.values()):
+            entered.set()
+            assert release.wait(5)
+        return original(project_id)
+    monkeypatch.setattr(main.project_service, "ensure_writable", pause_worker)
+    def archive():
+        archive_started.set()
+        return main.project_service.archive(project["id"], False)
+    payload = {"task_id": task["id"], "target_column_id": board["columns"][-1]["id"], "target_position": 0, "idempotency_key": "live"}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        move = executor.submit(main.accepted_action, project["id"], "MOVE_TASK", payload)
+        try:
+            assert entered.wait(5)
+            pending_archive = executor.submit(archive)
+            assert archive_started.wait(5)
+            assert not pending_archive.done()
+        finally:
+            release.set()
+        result = move.result(timeout=5)
+        assert pending_archive.result(timeout=5)["is_archived"]
+    assert main.repository.actions[result["action_id"]]["attempt_count"] == 1
+    assert main.repository.tasks[task["id"]]["column_id"] == board["columns"][-1]["id"]

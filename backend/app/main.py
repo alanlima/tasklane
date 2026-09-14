@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from .action_lock import serialized_board_action
 from .repository import MockRepository, new_id, now
 from .database import DatabaseRepository
 from .label_service import LabelService
@@ -166,6 +167,7 @@ def delete_label(label_id: str) -> Response:
     label_service.delete(label_id)
     return Response(status_code=204)
 
+@serialized_board_action
 def process_action(action: dict) -> None:
     action["status"] = "PROCESSING"; action["started_at"] = now(); action["attempt_count"] += 1
     try:
@@ -190,6 +192,7 @@ def process_action(action: dict) -> None:
     except HTTPException as error:
         action["status"] = "FAILED"; action["completed_at"] = now(); action["last_error"] = error.detail; raise
 
+@serialized_board_action
 def recover_actions() -> None:
     for action in sorted(repository.actions.values(), key=lambda item: item["created_at"]):
         if action["status"] not in {"PENDING", "PROCESSING", "FAILED"}: continue
@@ -198,6 +201,7 @@ def recover_actions() -> None:
         except HTTPException: pass
     repository.save()
 
+@serialized_board_action
 def accepted_action(project_id: str, action_type: str, payload: dict[str, Any]) -> dict:
     key = (project_id, payload["idempotency_key"])
     if key in repository.action_keys: action = repository.actions[repository.action_keys[key]]; return {"action_id": action["id"], "status": action["status"]}

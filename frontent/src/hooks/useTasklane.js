@@ -32,10 +32,10 @@ export function useTasklane() {
     setProjects((current) => updated.is_archived ? current.filter((item) => item.id !== original.id) : [...current.filter((item) => item.id !== original.id), summary]);
     setArchivedProjects((current) => updated.is_archived ? [...current.filter((item) => item.id !== original.id), summary] : current.filter((item) => item.id !== original.id));
   }, []);
-  const archiveProject = useCallback(async () => {
+  const archiveProject = useCallback(async (confirmIncomplete = false) => {
     if (!project) return;
     const projectId = project.id;
-    const archived = await api.archiveProject(projectId, true);
+    const archived = await api.archiveProject(projectId, confirmIncomplete);
     reconcileLifecycle(project, { ...archived, is_archived: true });
     setProject((current) => current?.id === projectId ? null : current);
     await refreshProjects().catch(() => {});

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from .repository import now
+from .action_lock import serialized_board_action
 
 
 class ProjectArchivedError(Exception):
@@ -38,6 +39,7 @@ class ProjectService:
         if self.repository.projects[project_id].get("is_archived", False):
             raise ProjectArchivedError("Archived projects are read-only. Restore the project to make changes.")
 
+    @serialized_board_action
     def archive(self, project_id: str, confirm_incomplete: bool) -> dict:
         self.recover_actions()
         if any(action["project_id"] == project_id and (
@@ -61,6 +63,7 @@ class ProjectService:
         project["updated_at"] = now()
         return self.repository.copy(project)
 
+    @serialized_board_action
     def delete(self, project_id: str, confirmation_name: str) -> None:
         project = self.repository.projects[project_id]
         if confirmation_name != project["name"]:

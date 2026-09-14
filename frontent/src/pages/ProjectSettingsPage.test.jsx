@@ -61,3 +61,19 @@ describe("ProjectSettingsPage label mutations", () => {
     expect(onDelete).toHaveBeenCalledWith("Launch");
   });
 });
+
+it("asks again when archive recovery changes the incomplete-task warning", async () => {
+  const user = userEvent.setup();
+  const onArchive = vi.fn().mockRejectedValueOnce(new Error("confirmation required")).mockResolvedValue();
+  const onGetArchiveSummary = vi.fn().mockResolvedValueOnce({ total_tasks: 1, incomplete_tasks: 0 }).mockResolvedValueOnce({ total_tasks: 1, incomplete_tasks: 1 });
+  renderSettings(vi.fn(), { onArchive, onGetArchiveSummary });
+  try {
+    await user.click(screen.getByRole("button", { name: "Archive project" }));
+    expect(await screen.findByText("All 1 tasks are complete.")).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Archive project" })[1]);
+    expect(onArchive).toHaveBeenNthCalledWith(1, false);
+    expect(await screen.findByText("1 incomplete of 1 tasks will remain on this read-only board.")).toBeVisible();
+    await user.click(screen.getAllByRole("button", { name: "Archive project" })[1]);
+    expect(onArchive).toHaveBeenNthCalledWith(2, true);
+  } finally { cleanup(); }
+});
