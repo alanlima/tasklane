@@ -165,19 +165,43 @@ it("retains reconciled archived cards when dashboard refresh fails", async () =>
   expect(screen.getByRole("button", { name: /Project a/ })).toBeVisible();
 });
 
-it("does not clear a revisited route when its previous archive request finishes", async () => {
-  const { router, user } = setup("/projects/a/settings");
-  let finish;
+it.each(["archive", "restore", "delete"])("reconciles a delayed %s after revisiting the same project", async (operation) => {
+  const { router, user } = setup();
+  await screen.findByRole("heading", { name: "Projects" });
+  let current = { ...board("a"), is_archived: operation === "restore" };
+  api.getBoard.mockImplementation(async () => {
+    if (!current) throw Object.assign(new Error("deleted"), { status: 404 });
+    return current;
+  });
+  let finish, staleLoad;
   vi.spyOn(api, "getArchiveSummary").mockResolvedValue({ total_tasks: 0, incomplete_tasks: 0 });
-  vi.spyOn(api, "archiveProject").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-  await user.click(await screen.findByRole("button", { name: "Archive project" }));
-  await user.click(screen.getAllByRole("button", { name: "Archive project" })[1]);
+  vi.spyOn(api, `${operation}Project`).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  await go(router, "/projects/a/settings");
+  if (operation === "restore") await user.click(await screen.findByRole("button", { name: "Restore project" }));
+  else if (operation === "archive") {
+    await user.click(await screen.findByRole("button", { name: "Archive project" }));
+    await user.click(screen.getAllByRole("button", { name: "Archive project" })[1]);
+  } else {
+    await user.click(await screen.findByRole("button", { name: "Delete permanently" }));
+    await user.type(screen.getAllByLabelText("Project name")[1], "Project a");
+    await user.click(screen.getAllByRole("button", { name: "Delete permanently" })[1]);
+  }
   await go(router, "/");
+  api.getBoard.mockImplementationOnce(() => new Promise((resolve) => { staleLoad = resolve; }));
   await go(router, "/projects/a");
-  await screen.findByRole("heading", { name: "Project a" });
-  await act(async () => finish({ ...board("a"), is_archived: true }));
+  const oldBoard = current;
+  current = operation === "delete" ? null : { ...current, is_archived: operation === "archive" };
+  await act(async () => finish(current));
+  expect(await screen.findByRole("heading", { name: operation === "delete" ? "Project not found" : "Project a" })).toBeVisible();
+  await act(async () => staleLoad(oldBoard));
   expect(router.state.location.pathname).toBe("/projects/a");
-  expect(screen.getByRole("heading", { name: "Project a" })).toBeVisible();
+  if (operation === "archive") {
+    expect(screen.getByText(/This project is archived/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Add task", exact: true })).not.toBeInTheDocument();
+  } else if (operation === "restore") {
+    expect(screen.queryByText(/This project is archived/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Add task", exact: true })[0]).toBeEnabled();
+  } else expect(screen.getByRole("heading", { name: "Project not found" })).toBeVisible();
 });
 
 it("does not let a late label save cancel the next route's board load", async () => {

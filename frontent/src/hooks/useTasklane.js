@@ -34,6 +34,15 @@ export function useTasklane(initialProjectId) {
       if (version === boardVersion.current) setBoardError({ projectId, status: requestError.status, message: requestError.status === 404 ? "This project was deleted or does not exist. Return to Projects to choose another board." : "Check your connection and try again, or return to Projects." });
     } finally { if (version === boardVersion.current) setLoading(false); }
   }, []);
+  const reconcileCurrentProject = useCallback((projectId, version, patch) => {
+    if (selectedProjectId.current !== projectId || (routeProjectId.current !== undefined && routeProjectId.current !== projectId)) return;
+    if (version !== boardVersion.current) {
+      // A revisited route needs fresh board data, including archive/deletion state.
+      openProject(projectId);
+      return;
+    }
+    setProject((current) => current?.id === projectId ? (patch === null ? null : { ...current, ...patch }) : current);
+  }, [openProject]);
   const refreshBoard = useCallback(async () => {
     if (project && selectedProjectId.current === project.id && (routeProjectId.current === undefined || routeProjectId.current === project.id)) {
       const version = ++boardVersion.current;
@@ -44,7 +53,7 @@ export function useTasklane(initialProjectId) {
   }, [project, refreshProjects]);
   const showProjects = useCallback(() => { selectedProjectId.current = null; ++boardVersion.current; setProject(null); setBoardError(null); setLoading(false); refreshProjects().catch(() => {}); }, [refreshProjects]);
   const createProject = useCallback(async (details) => { const created = await api.createProject(details); await refreshProjects().catch(() => {}); return created; }, [refreshProjects]);
-  const updateProject = useCallback(async (details) => { if (!project) return null; const projectId = project.id; const version = boardVersion.current; const updated = await api.updateProject(projectId, details); setProject((current) => current?.id === projectId && version === boardVersion.current ? { ...current, ...updated } : current); setProjects((current) => current.map((item) => item.id === projectId ? { ...item, ...updated } : item)); refreshProjects().catch(() => {}); return updated; }, [project, refreshProjects]);
+  const updateProject = useCallback(async (details) => { if (!project) return null; const projectId = project.id; const version = boardVersion.current; const updated = await api.updateProject(projectId, details); reconcileCurrentProject(projectId, version, updated); setProjects((current) => current.map((item) => item.id === projectId ? { ...item, ...updated } : item)); refreshProjects().catch(() => {}); return updated; }, [project, refreshProjects, reconcileCurrentProject]);
   const getArchiveSummary = useCallback(() => project ? api.getArchiveSummary(project.id) : Promise.resolve(null), [project]);
   const reconcileLifecycle = useCallback((original, updated) => {
     ++listVersion.current;
@@ -61,18 +70,18 @@ export function useTasklane(initialProjectId) {
     const version = boardVersion.current;
     const archived = await api.archiveProject(projectId, confirmIncomplete);
     reconcileLifecycle(project, { ...archived, is_archived: true });
-    setProject((current) => current?.id === projectId && version === boardVersion.current ? null : current);
+    reconcileCurrentProject(projectId, version, null);
     refreshProjects().catch(() => {});
-  }, [project, refreshProjects, reconcileLifecycle]);
+  }, [project, refreshProjects, reconcileLifecycle, reconcileCurrentProject]);
   const restoreProject = useCallback(async () => {
     if (!project) return;
     const projectId = project.id;
     const version = boardVersion.current;
     const restored = await api.restoreProject(projectId);
     reconcileLifecycle(project, { ...restored, is_archived: false });
-    setProject((current) => current?.id === projectId && version === boardVersion.current ? { ...current, ...restored } : current);
+    reconcileCurrentProject(projectId, version, restored);
     refreshProjects().catch(() => {});
-  }, [project, refreshProjects, reconcileLifecycle]);
+  }, [project, refreshProjects, reconcileLifecycle, reconcileCurrentProject]);
   const deleteProject = useCallback(async (confirmationName) => {
     if (!project) return;
     const projectId = project.id;
@@ -81,9 +90,9 @@ export function useTasklane(initialProjectId) {
     ++listVersion.current;
     setProjects((current) => current.filter((item) => item.id !== projectId));
     setArchivedProjects((current) => current.filter((item) => item.id !== projectId));
-    setProject((current) => current?.id === projectId && version === boardVersion.current ? null : current);
+    reconcileCurrentProject(projectId, version, null);
     refreshProjects().catch(() => {});
-  }, [project, refreshProjects]);
+  }, [project, refreshProjects, reconcileCurrentProject]);
   const manageLabel = useCallback(async (operation, ...args) => { const result = await api[operation](...args); await refreshBoard(); return result; }, [refreshBoard]);
   useEffect(() => {
     let active = true;
