@@ -1,0 +1,22 @@
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { useTasklane } from "./useTasklane";
+import { api } from "../services/mockApi";
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it.each(["restoreProject", "archiveProject", "deleteProject"])("ignores a delayed %s result after opening another project", async (operation) => {
+  const a = { id: "a", name: "A", is_archived: true, tasks: [] };
+  const b = { id: "b", name: "B", is_archived: false, tasks: [{ id: "b-task" }] };
+  vi.spyOn(api, "listProjects").mockResolvedValue([a, b]);
+  vi.spyOn(api, "getBoard").mockImplementation(async (id) => id === "a" ? a : b);
+  let resolve;
+  vi.spyOn(api, operation).mockImplementation(() => new Promise((done) => { resolve = done; }));
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  let pending;
+  act(() => { pending = result.current[operation]("A"); });
+  act(() => result.current.showProjects());
+  await act(() => result.current.openProject("b"));
+  await act(async () => { resolve({ ...a, is_archived: false }); await pending; });
+  expect(result.current.project).toEqual(b);
+});
