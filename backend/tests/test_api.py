@@ -136,15 +136,40 @@ def test_task_checklist_and_label_can_be_updated_and_deleted() -> None:
     assert api.get(f"/api/tasks/{task['id']}").json()["label_ids"] == []
 
 
-def test_project_deletion_removes_its_board_and_validation_rejects_cross_project_ids() -> None:
+def test_project_deletion_removes_its_board_and_requires_exact_name() -> None:
     api = client(); first = create_project(api, "First"); second = create_project(api, "Second")
     first_board = api.get(f"/api/projects/{first['id']}/board").json(); second_board = api.get(f"/api/projects/{second['id']}/board").json()
     task = api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": first_board["columns"][0]["id"], "title": "Keep isolated"}).json()
     assert api.post(f"/api/projects/{first['id']}/tasks", json={"column_id": second_board["columns"][0]["id"], "title": "Invalid"}).status_code == 409
     assert api.post(f"/api/projects/{first['id']}/actions/move-task", json={"task_id": task["id"], "target_column_id": second_board["columns"][0]["id"], "target_position": 0, "idempotency_key": "cross-project"}).status_code == 409
-    assert api.delete(f"/api/projects/{first['id']}").status_code == 204
+    action = api.post(f"/api/projects/{first['id']}/actions/move-task", json={"task_id": task["id"], "target_column_id": first_board["columns"][1]["id"], "target_position": 0, "idempotency_key": "owned-action"}).json()
+    assert api.delete(f"/api/projects/{first['id']}", json={"confirmation_name": "not the name"}).status_code == 409
+    assert api.delete(f"/api/projects/{first['id']}", json={"confirmation_name": "First"}).status_code == 204
     assert api.get(f"/api/projects/{first['id']}").status_code == 404
     assert api.get(f"/api/tasks/{task['id']}").status_code == 404
+    assert api.get(f"/api/actions/{action['action_id']}").status_code == 404
+
+
+def test_project_archive_requires_confirmation_hides_dashboard_and_enforces_read_only() -> None:
+    api = client(); project = create_project(api, "Archive me"); board = api.get(f"/api/projects/{project['id']}/board").json()
+    api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Still open"})
+
+    summary = api.get(f"/api/projects/{project['id']}/archive-summary")
+    assert summary.json() == {"total_tasks": 1, "completed_tasks": 0, "incomplete_tasks": 1}
+    blocked = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False})
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"]["incomplete_tasks"] == 1
+
+    archived = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+    assert archived.status_code == 200
+    assert archived.json()["is_archived"] is True
+    assert project["id"] not in {item["id"] for item in api.get("/api/projects").json()}
+    assert project["id"] in {item["id"] for item in api.get("/api/projects?include_archived=true").json()}
+    assert api.get(f"/api/projects/{project['id']}/board").status_code == 200
+    assert api.patch(f"/api/projects/{project['id']}", json={"name": "Nope"}).status_code == 409
+    assert api.post(f"/api/projects/{project['id']}/tasks", json={"column_id": board["columns"][0]["id"], "title": "Nope"}).status_code == 409
+    assert api.post(f"/api/projects/{project['id']}/restore").json()["is_archived"] is False
+    assert api.patch(f"/api/projects/{project['id']}", json={"name": "Active again"}).status_code == 200
 
 
 def test_populated_column_requires_destination_and_columns_can_be_reordered() -> None:
@@ -194,3 +219,174 @@ def test_task_can_be_reordered_within_its_current_column() -> None:
     tasks = api.get(f"/api/projects/{project['id']}/board").json()["tasks"]
     ordered = [task["id"] for task in tasks if task["column_id"] == column["id"]]
     assert ordered == [second["id"], first["id"]]
+
+
+def test_archive_and_dashboard_completion_use_final_column_not_name() -> None:
+    api = client()
+    project = api.post("/api/projects", json={"name": "Completion lanes"}).json()
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    final = board["columns"][-1]
+    assert api.patch(f"/api/columns/{final['id']}", json={"name": "Complete"}).status_code == 200
+    api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Finished", "column_id": final["id"]})
+    summary = api.get(f"/api/projects/{project['id']}/archive-summary").json()
+    assert summary == {"total_tasks": 1, "completed_tasks": 1, "incomplete_tasks": 0}
+    dashboard = next(item for item in api.get("/api/projects").json() if item["id"] == project["id"])
+    assert dashboard["completion_percentage"] == 100
+    assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200
+
+
+@pytest.mark.parametrize("kind", ["task", "column"])
+def test_archived_project_returns_accepted_move_retry_but_rejects_new_move(kind: str) -> None:
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Retry me", "column_id": board["columns"][0]["id"]}).json()
+    command = {"target_position": 0, "idempotency_key": f"archive-retry-{kind}"}
+    if kind == "task":
+        command.update(task_id=task["id"], target_column_id=board["columns"][1]["id"])
+    else:
+        command.update(column_id=board["columns"][1]["id"])
+    endpoint = f"/api/projects/{project['id']}/actions/move-{kind}"
+    first = api.post(endpoint, json=command)
+    assert first.status_code == 202
+    original = api.get(f"/api/actions/{first.json()['action_id']}").json()
+    assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True}).status_code == 200
+    retry = api.post(endpoint, json=command)
+    assert retry.status_code == 202
+    assert retry.json() == first.json()
+    assert api.get(f"/api/actions/{first.json()['action_id']}").json() == original
+    assert api.post(endpoint, json={**command, "idempotency_key": "new-command"}).status_code == 409
+
+
+@pytest.mark.parametrize("action_status,attempts", [("PENDING", 0), ("PROCESSING", 1), ("FAILED", 1)])
+def test_archive_waits_for_accepted_moves_before_becoming_read_only(action_status: str, attempts: int) -> None:
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Accepted move", "column_id": board["columns"][0]["id"]}).json()
+    action_id = f"queued-{project['id']}"
+    action = {"id": action_id, "project_id": project["id"], "action_type": "MOVE_TASK", "payload": {"task_id": task["id"], "target_column_id": board["columns"][-1]["id"], "target_position": 0, "idempotency_key": action_id}, "idempotency_key": action_id, "status": action_status, "attempt_count": attempts, "last_error": None, "created_at": "2026-01-01T00:00:00+00:00", "started_at": None, "completed_at": None}
+    main.repository.actions[action_id] = action
+    main.repository.action_keys[(project["id"], action_id)] = action_id
+    main.repository.save()
+    archived = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False})
+    assert archived.status_code == 200
+    assert archived.json()["completed_tasks"] == 1
+    assert archived.json()["incomplete_tasks"] == 0
+    assert action["status"] == "COMPLETED"
+    assert action["attempt_count"] == attempts + 1
+    assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200
+    persisted = DatabaseRepository(MockRepository())
+    assert persisted.projects[project["id"]]["is_archived"]
+    assert persisted.actions[action_id]["status"] == "COMPLETED"
+    assert persisted.tasks[task["id"]]["column_id"] == board["columns"][-1]["id"]
+    api.post(f"/api/projects/{project['id']}/restore")
+    completed_attempts = action["attempt_count"]
+    main.recover_actions()
+    assert action["attempt_count"] == completed_attempts
+
+
+def test_archive_advances_failed_action_to_retry_limit_without_restart() -> None:
+    api = client()
+    project = create_project(api)
+    action_id = "invalid-accepted-action"
+    action = {"id": action_id, "project_id": project["id"], "action_type": "MOVE_COLUMN", "payload": {"column_id": "missing-column", "target_position": 0, "idempotency_key": action_id}, "idempotency_key": action_id, "status": "FAILED", "attempt_count": 1, "last_error": "Column not found", "created_at": "2026-01-01T00:00:00+00:00", "started_at": None, "completed_at": None}
+    main.repository.actions[action_id] = action
+    main.repository.action_keys[(project["id"], action_id)] = action_id
+    main.repository.save()
+    for attempts in range(2, 6):
+        response = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+        assert action["attempt_count"] == attempts
+        assert action["status"] == "FAILED"
+        assert response.status_code == (200 if attempts == 5 else 409)
+        persisted = DatabaseRepository(MockRepository())
+        assert persisted.actions[action_id]["attempt_count"] == attempts
+    api.post(f"/api/projects/{project['id']}/restore")
+    main.recover_actions()
+    assert action["attempt_count"] == 5
+
+
+def test_archive_waits_for_live_action_without_processing_it_twice(monkeypatch) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Live move", "column_id": board["columns"][0]["id"]}).json()
+    entered, release, archive_started = Event(), Event(), Event()
+    original = main.project_service.ensure_writable
+    def pause_worker(project_id):
+        if any(action["status"] == "PROCESSING" for action in main.repository.actions.values()):
+            entered.set()
+            assert release.wait(5)
+        return original(project_id)
+    monkeypatch.setattr(main.project_service, "ensure_writable", pause_worker)
+    def archive():
+        archive_started.set()
+        return main.project_service.archive(project["id"], False)
+    payload = {"task_id": task["id"], "target_column_id": board["columns"][-1]["id"], "target_position": 0, "idempotency_key": "live"}
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        move = executor.submit(main.accepted_action, project["id"], "MOVE_TASK", payload)
+        try:
+            assert entered.wait(5)
+            pending_archive = executor.submit(archive)
+            assert archive_started.wait(5)
+            assert not pending_archive.done()
+        finally:
+            release.set()
+        result = move.result(timeout=5)
+        assert pending_archive.result(timeout=5)["is_archived"]
+    assert main.repository.actions[result["action_id"]]["attempt_count"] == 1
+    assert main.repository.tasks[task["id"]]["column_id"] == board["columns"][-1]["id"]
+
+
+@pytest.mark.parametrize("pause_at", ["validation", "save"])
+@pytest.mark.parametrize("lifecycle", ["archive", "delete"])
+def test_lifecycle_serializes_task_write_through_persistence(monkeypatch, pause_at, lifecycle) -> None:
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    entered, release, second_started = Event(), Event(), Event()
+    def pause_once():
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+    if pause_at == "validation":
+        original = main.writable_project
+        def paused_validation(project_id):
+            result = original(project_id)
+            pause_once()
+            return result
+        monkeypatch.setattr(main, "writable_project", paused_validation)
+    else:
+        original = main.repository.save
+        def paused_save():
+            pause_once()
+            original()
+        monkeypatch.setattr(type(main.repository), "save", lambda self: paused_save())
+    def transition():
+        second_started.set()
+        if lifecycle == "archive":
+            return api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+        return api.delete(f"/api/projects/{project['id']}", json={"confirmation_name": project["name"]})
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        create = executor.submit(api.post, f"/api/projects/{project['id']}/tasks", json={"title": "Concurrent", "column_id": board["columns"][0]["id"]})
+        try:
+            assert entered.wait(5)
+            change = executor.submit(transition)
+            assert second_started.wait(5)
+            with pytest.raises(TimeoutError):
+                change.result(timeout=0.2)
+        finally:
+            release.set()
+        assert create.result(timeout=5).status_code == 201
+        assert change.result(timeout=5).status_code == (200 if lifecycle == "archive" else 204)
+    persisted = DatabaseRepository(MockRepository())
+    if lifecycle == "archive":
+        assert persisted.projects[project["id"]]["is_archived"]
+        assert len(persisted.project_tasks(project["id"])) == 1
+    else:
+        assert project["id"] not in persisted.projects
+        assert persisted.project_tasks(project["id"]) == []

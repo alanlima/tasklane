@@ -370,6 +370,8 @@ Doing
 Done
 ```
 
+For completion counts, the final column by position is the completion lane, regardless of its name. This applies to board, dashboard, and archive summaries. Reordering columns changes which lane represents completion.
+
 Users must be able to:
 
 - create columns

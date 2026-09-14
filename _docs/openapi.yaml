@@ -26,6 +26,7 @@ paths:
       tags: [Projects]
       summary: List projects with dashboard summary values
       operationId: listProjects
+      parameters: [{ name: include_archived, in: query, required: false, schema: { type: boolean, default: false }, description: Include archived projects; they are excluded by default. }]
       responses:
         '200':
           description: Projects ordered by most recently updated
@@ -53,9 +54,32 @@ paths:
       responses: { '200': { description: Updated project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '404': { $ref: '#/components/responses/NotFound' }, '422': { $ref: '#/components/responses/ValidationError' } }
     delete:
       tags: [Projects]
-      summary: Delete a project and all project-owned data
+      summary: Permanently delete a project and all project-owned data after exact-name confirmation
       operationId: deleteProject
-      responses: { '204': { description: Project deleted }, '404': { $ref: '#/components/responses/NotFound' } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/DeleteProject' } } } }
+      responses: { '204': { description: Project deleted }, '404': { $ref: '#/components/responses/NotFound' }, '409': { description: Project name confirmation did not match } }
+  /api/projects/{project_id}/archive-summary:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    get:
+      tags: [Projects]
+      summary: Get task counts shown before archiving a project
+      operationId: getArchiveSummary
+      responses: { '200': { description: Archive task summary, content: { application/json: { schema: { $ref: '#/components/schemas/ArchiveSummary' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/archive:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [Projects]
+      summary: Archive a project and make it read-only
+      operationId: archiveProject
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ArchiveProject' } } } }
+      responses: { '200': { description: Archived project with post-recovery counts, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectLifecycleResult' } } } }, '409': { description: Incomplete tasks need explicit confirmation or accepted board actions are still pending }, '404': { $ref: '#/components/responses/NotFound' } }
+  /api/projects/{project_id}/restore:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [Projects]
+      summary: Restore an archived project to active and writable
+      operationId: restoreProject
+      responses: { '200': { description: Restored project with current counts, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectLifecycleResult' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
   /api/projects/{project_id}/board:
     parameters: [{ $ref: '#/components/parameters/ProjectId' }]
     get:
@@ -193,10 +217,14 @@ components:
     NotFound: { description: Resource not found }
     ValidationError: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/ValidationError' } } } }
   schemas:
-    Project: { type: object, required: [id, name, created_at, updated_at], properties: { id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
+    Project: { type: object, required: [id, name, is_archived, created_at, updated_at], properties: { id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 }, is_archived: { type: boolean }, archived_at: { type: [string, 'null'], format: date-time }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
     ProjectSummary: { allOf: [{ $ref: '#/components/schemas/Project' }, { type: object, required: [total_tasks, completed_tasks, completion_percentage], properties: { total_tasks: { type: integer, minimum: 0 }, completed_tasks: { type: integer, minimum: 0 }, completion_percentage: { type: integer, minimum: 0, maximum: 100 } } }] }
     ProjectCreate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 } } }
     ProjectUpdate: { type: object, minProperties: 1, properties: { name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 } } }
+    ArchiveProject: { type: object, properties: { confirm_incomplete: { type: boolean, default: false, description: Must be true when incomplete_tasks is greater than zero. } } }
+    ProjectLifecycleResult: { allOf: [{ $ref: '#/components/schemas/Project' }, { $ref: '#/components/schemas/ArchiveSummary' }] }
+    ArchiveSummary: { type: object, required: [total_tasks, completed_tasks, incomplete_tasks], properties: { total_tasks: { type: integer, minimum: 0 }, completed_tasks: { type: integer, minimum: 0 }, incomplete_tasks: { type: integer, minimum: 0 } } }
+    DeleteProject: { type: object, required: [confirmation_name], properties: { confirmation_name: { type: string, description: Exact current project name. } } }
     Column: { type: object, required: [id, project_id, name, position, created_at, updated_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 80 }, position: { type: integer, minimum: 0 }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
     ColumnCreate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 80 } } }
     ColumnUpdate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 80 } } }

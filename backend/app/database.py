@@ -32,6 +32,9 @@ class DatabaseRepository:
         else:
             self.__dict__.update(deepcopy(seed.__dict__))
             self.save()
+        for project in self.projects.values():
+            project.setdefault("is_archived", False)
+            project.setdefault("archived_at", None)
         self.action_keys = {(action["project_id"], action["idempotency_key"]): action["id"] for action in self.actions.values()}
 
     def save(self):

@@ -1,0 +1,87 @@
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { useTasklane } from "./useTasklane";
+import { api } from "../services/mockApi";
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+it.each(["restoreProject", "archiveProject", "deleteProject"])("ignores a delayed %s result after opening another project", async (operation) => {
+  const a = { id: "a", name: "A", is_archived: true, tasks: [] };
+  const b = { id: "b", name: "B", is_archived: false, tasks: [{ id: "b-task" }] };
+  vi.spyOn(api, "listProjects").mockResolvedValue([a, b]);
+  vi.spyOn(api, "getBoard").mockImplementation(async (id) => id === "a" ? a : b);
+  let resolve;
+  vi.spyOn(api, operation).mockImplementation(() => new Promise((done) => { resolve = done; }));
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  let pending;
+  act(() => { pending = result.current[operation]("A"); });
+  act(() => result.current.showProjects());
+  await act(() => result.current.openProject("b"));
+  await act(async () => { resolve({ ...a, is_archived: false }); await pending; });
+  expect(result.current.project).toEqual(b);
+});
+
+it.each(["restoreProject", "archiveProject", "deleteProject"])("keeps successful %s state when refreshing projects fails", async (operation) => {
+  const archived = operation === "restoreProject";
+  const project = { id: "a", name: "A", is_archived: archived, updated_at: "2026-09-14T00:00:00Z", columns: [{ id: "done", position: 1 }], tasks: [{ id: "t", columnId: "done" }] };
+  const list = vi.spyOn(api, "listProjects").mockResolvedValue([project]);
+  vi.spyOn(api, "getBoard").mockResolvedValue(project);
+  vi.spyOn(api, operation).mockResolvedValue({ ...project, is_archived: !archived });
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  list.mockRejectedValue(new Error("list offline"));
+  await act(async () => { await expect(result.current[operation]("A")).resolves.toBeUndefined(); });
+  expect(result.current.error).toContain("Could not load projects");
+  if (operation === "deleteProject") {
+    expect(result.current.projects).toEqual([]);
+    expect(result.current.archivedProjects).toEqual([]);
+  } else {
+    const destination = operation === "archiveProject" ? result.current.archivedProjects : result.current.projects;
+    const source = operation === "archiveProject" ? result.current.projects : result.current.archivedProjects;
+    expect(source).toEqual([]);
+    expect(destination).toMatchObject([{ id: "a", is_archived: !archived, totalTasks: 1, completedTasks: 1 }]);
+  }
+  if (operation === "restoreProject") expect(result.current.project.is_archived).toBe(false);
+  else expect(result.current.project).toBeNull();
+});
+
+it.each([false, true])("discards a stale list response after newer deletion (old request fails: %s)", async (failOld) => {
+  const a = { id: "a", name: "A", is_archived: false, tasks: [], columns: [] };
+  const b = { id: "b", name: "B", is_archived: false, tasks: [], columns: [] };
+  const list = vi.spyOn(api, "listProjects").mockResolvedValue([a, b]);
+  vi.spyOn(api, "getBoard").mockImplementation(async (id) => id === "a" ? a : b);
+  vi.spyOn(api, "archiveProject").mockResolvedValue({ ...a, is_archived: true });
+  vi.spyOn(api, "deleteProject").mockResolvedValue();
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  let resolveOld, rejectOld;
+  list.mockImplementationOnce(() => new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; }));
+  let pending;
+  await act(async () => { pending = result.current.archiveProject(); });
+  await act(() => result.current.openProject("b"));
+  list.mockResolvedValue([{ ...a, is_archived: true }]);
+  await act(() => result.current.deleteProject("B"));
+  await act(async () => {
+    if (failOld) rejectOld(new Error("old request failed"));
+    else resolveOld([{ ...a, is_archived: true }, b]);
+    await pending;
+  });
+  expect(result.current.projects).toEqual([]);
+  expect(result.current.archivedProjects).toMatchObject([{ id: "a" }]);
+  expect(result.current.error).toBeNull();
+});
+
+it("uses post-recovery archive counts when the follow-up list fails", async () => {
+  const project = { id: "a", name: "A", columns: [{ id: "todo", position: 0 }, { id: "done", position: 1 }], tasks: [{ id: "t", columnId: "todo" }] };
+  const list = vi.spyOn(api, "listProjects").mockResolvedValue([project]);
+  vi.spyOn(api, "getBoard").mockResolvedValue(project);
+  vi.spyOn(api, "archiveProject").mockResolvedValue({ id: "a", is_archived: true, total_tasks: 1, completed_tasks: 1, incomplete_tasks: 0, updated_at: "2026-09-14T00:00:00Z" });
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  list.mockRejectedValue(new Error("offline"));
+  await act(() => result.current.archiveProject(true));
+  expect(result.current.archivedProjects).toMatchObject([{ totalTasks: 1, completedTasks: 1, completion: 100 }]);
+});
