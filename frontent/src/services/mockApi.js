@@ -1,5 +1,5 @@
 const baseUrl = import.meta.env.VITE_API_BASE_URL ?? "";
-const request = async (path, options = {}) => { const response = await fetch(`${baseUrl}${path}`, { headers: { "Content-Type": "application/json" }, ...options }); if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail ?? "Request failed"); return response.status === 204 ? null : response.json(); };
+const request = async (path, options = {}) => { const response = await fetch(`${baseUrl}${path}`, { headers: { "Content-Type": "application/json" }, ...options }); if (!response.ok) { const detail = (await response.json().catch(() => ({}))).detail; const error = new Error(typeof detail === "string" ? detail : detail?.message ?? "Request failed"); error.status = response.status; throw error; } return response.status === 204 ? null : response.json(); };
 const id = () => crypto.randomUUID();
 const priority = (value) => value === "NONE" ? "None" : value.charAt(0) + value.slice(1).toLowerCase();
 const mapTask = (task) => ({ ...task, columnId: task.column_id, labelIds: task.label_ids, points: task.story_points, dueDate: task.due_date ?? "", priority: priority(task.priority), checklist: task.checklist.map((item) => ({ ...item, done: item.is_completed })) });
