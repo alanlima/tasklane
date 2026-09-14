@@ -271,6 +271,8 @@ def test_archive_waits_for_accepted_moves_before_becoming_read_only(action_statu
     main.repository.save()
     archived = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False})
     assert archived.status_code == 200
+    assert archived.json()["completed_tasks"] == 1
+    assert archived.json()["incomplete_tasks"] == 0
     assert action["status"] == "COMPLETED"
     assert action["attempt_count"] == attempts + 1
     assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200
@@ -336,3 +338,55 @@ def test_archive_waits_for_live_action_without_processing_it_twice(monkeypatch) 
         assert pending_archive.result(timeout=5)["is_archived"]
     assert main.repository.actions[result["action_id"]]["attempt_count"] == 1
     assert main.repository.tasks[task["id"]]["column_id"] == board["columns"][-1]["id"]
+
+
+@pytest.mark.parametrize("pause_at", ["validation", "save"])
+@pytest.mark.parametrize("lifecycle", ["archive", "delete"])
+def test_lifecycle_serializes_task_write_through_persistence(monkeypatch, pause_at, lifecycle) -> None:
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError
+    from threading import Event
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    entered, release, second_started = Event(), Event(), Event()
+    def pause_once():
+        if not entered.is_set():
+            entered.set()
+            assert release.wait(5)
+    if pause_at == "validation":
+        original = main.writable_project
+        def paused_validation(project_id):
+            result = original(project_id)
+            pause_once()
+            return result
+        monkeypatch.setattr(main, "writable_project", paused_validation)
+    else:
+        original = main.repository.save
+        def paused_save():
+            pause_once()
+            original()
+        monkeypatch.setattr(type(main.repository), "save", lambda self: paused_save())
+    def transition():
+        second_started.set()
+        if lifecycle == "archive":
+            return api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+        return api.delete(f"/api/projects/{project['id']}", json={"confirmation_name": project["name"]})
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        create = executor.submit(api.post, f"/api/projects/{project['id']}/tasks", json={"title": "Concurrent", "column_id": board["columns"][0]["id"]})
+        try:
+            assert entered.wait(5)
+            change = executor.submit(transition)
+            assert second_started.wait(5)
+            with pytest.raises(TimeoutError):
+                change.result(timeout=0.2)
+        finally:
+            release.set()
+        assert create.result(timeout=5).status_code == 201
+        assert change.result(timeout=5).status_code == (200 if lifecycle == "archive" else 204)
+    persisted = DatabaseRepository(MockRepository())
+    if lifecycle == "archive":
+        assert persisted.projects[project["id"]]["is_archived"]
+        assert len(persisted.project_tasks(project["id"])) == 1
+    else:
+        assert project["id"] not in persisted.projects
+        assert persisted.project_tasks(project["id"]) == []

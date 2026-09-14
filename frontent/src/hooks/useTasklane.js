@@ -26,8 +26,8 @@ export function useTasklane() {
   const reconcileLifecycle = useCallback((original, updated) => {
     ++listVersion.current;
     const done = [...(original.columns ?? [])].sort((a, b) => a.position - b.position).at(-1);
-    const totalTasks = original.tasks?.length ?? 0;
-    const completedTasks = original.tasks?.filter((task) => task.columnId === done?.id).length ?? 0;
+    const totalTasks = updated.total_tasks ?? original.tasks?.length ?? 0;
+    const completedTasks = updated.completed_tasks ?? original.tasks?.filter((task) => task.columnId === done?.id).length ?? 0;
     const summary = { ...original, ...updated, totalTasks, completedTasks, completion: totalTasks ? Math.round(completedTasks / totalTasks * 100) : 0, updatedAt: new Date(updated.updated_at).toLocaleDateString() };
     setProjects((current) => updated.is_archived ? current.filter((item) => item.id !== original.id) : [...current.filter((item) => item.id !== original.id), summary]);
     setArchivedProjects((current) => updated.is_archived ? [...current.filter((item) => item.id !== original.id), summary] : current.filter((item) => item.id !== original.id));

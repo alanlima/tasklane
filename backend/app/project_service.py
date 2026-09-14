@@ -54,14 +54,14 @@ class ProjectService:
         project["is_archived"] = True
         project["archived_at"] = now()
         project["updated_at"] = now()
-        return self.repository.copy(project)
+        return self.repository.copy(project) | self.archive_summary(project_id)
 
     def restore(self, project_id: str) -> dict:
         project = self.repository.projects[project_id]
         project["is_archived"] = False
         project["archived_at"] = None
         project["updated_at"] = now()
-        return self.repository.copy(project)
+        return self.repository.copy(project) | self.archive_summary(project_id)
 
     @serialized_board_action
     def delete(self, project_id: str, confirmation_name: str) -> None:

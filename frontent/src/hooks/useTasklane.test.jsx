@@ -72,3 +72,16 @@ it.each([false, true])("discards a stale list response after newer deletion (old
   expect(result.current.archivedProjects).toMatchObject([{ id: "a" }]);
   expect(result.current.error).toBeNull();
 });
+
+it("uses post-recovery archive counts when the follow-up list fails", async () => {
+  const project = { id: "a", name: "A", columns: [{ id: "todo", position: 0 }, { id: "done", position: 1 }], tasks: [{ id: "t", columnId: "todo" }] };
+  const list = vi.spyOn(api, "listProjects").mockResolvedValue([project]);
+  vi.spyOn(api, "getBoard").mockResolvedValue(project);
+  vi.spyOn(api, "archiveProject").mockResolvedValue({ id: "a", is_archived: true, total_tasks: 1, completed_tasks: 1, incomplete_tasks: 0, updated_at: "2026-09-14T00:00:00Z" });
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  list.mockRejectedValue(new Error("offline"));
+  await act(() => result.current.archiveProject(true));
+  expect(result.current.archivedProjects).toMatchObject([{ totalTasks: 1, completedTasks: 1, completion: 100 }]);
+});

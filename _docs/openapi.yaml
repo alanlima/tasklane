@@ -72,14 +72,14 @@ paths:
       summary: Archive a project and make it read-only
       operationId: archiveProject
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ArchiveProject' } } } }
-      responses: { '200': { description: Archived project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '409': { description: Incomplete tasks need explicit confirmation or accepted board actions are still pending }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses: { '200': { description: Archived project with post-recovery counts, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectLifecycleResult' } } } }, '409': { description: Incomplete tasks need explicit confirmation or accepted board actions are still pending }, '404': { $ref: '#/components/responses/NotFound' } }
   /api/projects/{project_id}/restore:
     parameters: [{ $ref: '#/components/parameters/ProjectId' }]
     post:
       tags: [Projects]
       summary: Restore an archived project to active and writable
       operationId: restoreProject
-      responses: { '200': { description: Restored project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses: { '200': { description: Restored project with current counts, content: { application/json: { schema: { $ref: '#/components/schemas/ProjectLifecycleResult' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
   /api/projects/{project_id}/board:
     parameters: [{ $ref: '#/components/parameters/ProjectId' }]
     get:
@@ -222,6 +222,7 @@ components:
     ProjectCreate: { type: object, required: [name], properties: { name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 } } }
     ProjectUpdate: { type: object, minProperties: 1, properties: { name: { type: string, minLength: 1, maxLength: 120 }, description: { type: [string, 'null'], maxLength: 2000 } } }
     ArchiveProject: { type: object, properties: { confirm_incomplete: { type: boolean, default: false, description: Must be true when incomplete_tasks is greater than zero. } } }
+    ProjectLifecycleResult: { allOf: [{ $ref: '#/components/schemas/Project' }, { $ref: '#/components/schemas/ArchiveSummary' }] }
     ArchiveSummary: { type: object, required: [total_tasks, completed_tasks, incomplete_tasks], properties: { total_tasks: { type: integer, minimum: 0 }, completed_tasks: { type: integer, minimum: 0 }, incomplete_tasks: { type: integer, minimum: 0 } } }
     DeleteProject: { type: object, required: [confirmation_name], properties: { confirmation_name: { type: string, description: Exact current project name. } } }
     Column: { type: object, required: [id, project_id, name, position, created_at, updated_at], properties: { id: { type: string, format: uuid }, project_id: { type: string, format: uuid }, name: { type: string, minLength: 1, maxLength: 80 }, position: { type: integer, minimum: 0 }, created_at: { type: string, format: date-time }, updated_at: { type: string, format: date-time } } }
