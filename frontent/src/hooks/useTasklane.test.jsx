@@ -45,3 +45,30 @@ it.each(["restoreProject", "archiveProject", "deleteProject"])("keeps successful
   if (operation === "restoreProject") expect(result.current.project.is_archived).toBe(false);
   else expect(result.current.project).toBeNull();
 });
+
+it.each([false, true])("discards a stale list response after newer deletion (old request fails: %s)", async (failOld) => {
+  const a = { id: "a", name: "A", is_archived: false, tasks: [], columns: [] };
+  const b = { id: "b", name: "B", is_archived: false, tasks: [], columns: [] };
+  const list = vi.spyOn(api, "listProjects").mockResolvedValue([a, b]);
+  vi.spyOn(api, "getBoard").mockImplementation(async (id) => id === "a" ? a : b);
+  vi.spyOn(api, "archiveProject").mockResolvedValue({ ...a, is_archived: true });
+  vi.spyOn(api, "deleteProject").mockResolvedValue();
+  const { result } = renderHook(useTasklane);
+  await waitFor(() => expect(result.current.isLoading).toBe(false));
+  await act(() => result.current.openProject("a"));
+  let resolveOld, rejectOld;
+  list.mockImplementationOnce(() => new Promise((resolve, reject) => { resolveOld = resolve; rejectOld = reject; }));
+  let pending;
+  await act(async () => { pending = result.current.archiveProject(); });
+  await act(() => result.current.openProject("b"));
+  list.mockResolvedValue([{ ...a, is_archived: true }]);
+  await act(() => result.current.deleteProject("B"));
+  await act(async () => {
+    if (failOld) rejectOld(new Error("old request failed"));
+    else resolveOld([{ ...a, is_archived: true }, b]);
+    await pending;
+  });
+  expect(result.current.projects).toEqual([]);
+  expect(result.current.archivedProjects).toMatchObject([{ id: "a" }]);
+  expect(result.current.error).toBeNull();
+});
