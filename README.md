@@ -75,3 +75,30 @@ Do not add authentication, users, collaboration, real-time updates, comments, at
 ## Contributing
 
 All work follows the GitHub issue and pull-request process in [AGENTS.md](AGENTS.md). Start from an issue, work in a dedicated branch, document the work on the issue, and raise a linked pull request for review.
+
+## Navigation and browser verification
+
+Dashboard (`/`), project board (`/projects/:projectId`), and project settings
+(`/projects/:projectId/settings`) have addressable URLs. Refresh and browser
+Back/Forward restore the selected page. Unknown paths and missing projects offer
+recovery to Projects; transient load failures offer retry. Unsaved drafts, open
+modals/drawers, and scroll position are not restored.
+
+React Router 7 supports the existing React 18 and Node 20 build. Nginx's existing
+SPA fallback serves nested URLs directly.
+
+After `docker compose up --build -d`, run:
+
+```powershell
+npm test --prefix frontent
+npm run build --prefix frontent
+$env:PLAYWRIGHT_CHANNEL = "msedge" # Use installed Edge on Windows.
+npm run test:navigation --prefix frontent
+```
+
+Without `PLAYWRIGHT_CHANNEL`, the smoke test uses Playwright Chromium (install it
+with `npx playwright install chromium` from `frontent/` if needed).
+`TASKLANE_URL` can override `http://localhost:5173`. The smoke test creates two
+synthetic projects on that instance and deletes only those projects afterward.
+It verifies refresh, deep links, history, recovery, lifecycle routes, keyboard
+focus, the task drawer, and horizontal board scrolling at three viewport sizes.

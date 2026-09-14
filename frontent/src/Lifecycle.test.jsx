@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
 import App from "./App";
 import { api } from "./services/mockApi";
 
@@ -13,7 +14,7 @@ function setup(archived = false) {
   vi.spyOn(api, "archiveProject").mockImplementation(async () => { current = { ...current, is_archived: true }; });
   vi.spyOn(api, "restoreProject").mockImplementation(async () => { current = { ...current, is_archived: false }; return current; });
   vi.spyOn(api, "deleteProject").mockResolvedValue();
-  render(<App />);
+  render(<MemoryRouter><App /></MemoryRouter>);
   return userEvent.setup();
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });

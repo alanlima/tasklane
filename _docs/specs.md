@@ -209,6 +209,14 @@ Displays the selected project's board.
 
 Task details appear in a right-side drawer rather than navigating away from the board.
 
+## Project settings
+
+Route: `/projects/:projectId/settings`.
+
+The URL is the source of truth for dashboard, board, and settings navigation. Direct links, refresh, and browser Back/Forward restore the matching page and reload persisted project data as needed. Missing projects and unknown paths show a recovery page; transient loading errors provide retry. Archive and deletion return to `/`, while restore stays on the current settings page. Late requests from a previous route must not replace the current page or redirect it.
+
+Unsaved form input, open drawers/modals, filters, and scroll position are not restored by page navigation.
+
 ---
 
 # 8. Application shell
