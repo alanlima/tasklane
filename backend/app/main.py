@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from .repository import MockRepository, new_id, now
 from .database import DatabaseRepository
 from .label_service import LabelService
-from .project_service import ArchiveConfirmationRequiredError, DeleteConfirmationError, ProjectArchivedError, ProjectService
+from .project_service import ArchiveConfirmationRequiredError, DeleteConfirmationError, PendingProjectActionsError, ProjectArchivedError, ProjectService
 
 app = FastAPI(title="Tasklane API", version="0.1.0", openapi_url="/openapi.json")
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], allow_methods=["*"], allow_headers=["*"])
@@ -87,6 +87,7 @@ def archive_summary(project_id: str) -> dict:
 def archive_project(project_id: str, payload: ArchiveProject) -> dict:
     project_or_404(project_id)
     try: return project_service.archive(project_id, payload.confirm_incomplete)
+    except PendingProjectActionsError as error: raise HTTPException(409, str(error)) from error
     except ArchiveConfirmationRequiredError as error: raise HTTPException(409, {"message": "This project has incomplete tasks. Confirm to archive it.", **error.summary}) from error
 @app.post("/api/projects/{project_id}/restore")
 def restore_project(project_id: str) -> dict:

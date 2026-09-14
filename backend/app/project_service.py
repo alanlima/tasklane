@@ -12,6 +12,10 @@ class ArchiveConfirmationRequiredError(Exception):
         self.summary = summary
 
 
+class PendingProjectActionsError(Exception):
+    pass
+
+
 class DeleteConfirmationError(Exception):
     pass
 
@@ -34,6 +38,11 @@ class ProjectService:
             raise ProjectArchivedError("Archived projects are read-only. Restore the project to make changes.")
 
     def archive(self, project_id: str, confirm_incomplete: bool) -> dict:
+        if any(action["project_id"] == project_id and (
+            action["status"] in {"PENDING", "PROCESSING"}
+            or (action["status"] == "FAILED" and action["attempt_count"] < 5)
+        ) for action in self.repository.actions.values()):
+            raise PendingProjectActionsError("Board moves are still pending. Wait for them to finish before archiving.")
         summary = self.archive_summary(project_id)
         if summary["incomplete_tasks"] and not confirm_incomplete:
             raise ArchiveConfirmationRequiredError(summary)

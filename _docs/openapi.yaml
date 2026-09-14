@@ -72,7 +72,7 @@ paths:
       summary: Archive a project and make it read-only
       operationId: archiveProject
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ArchiveProject' } } } }
-      responses: { '200': { description: Archived project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '409': { description: Incomplete tasks need explicit confirmation }, '404': { $ref: '#/components/responses/NotFound' } }
+      responses: { '200': { description: Archived project, content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } } }, '409': { description: Incomplete tasks need explicit confirmation or accepted board actions are still pending }, '404': { $ref: '#/components/responses/NotFound' } }
   /api/projects/{project_id}/restore:
     parameters: [{ $ref: '#/components/parameters/ProjectId' }]
     post:

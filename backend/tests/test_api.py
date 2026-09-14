@@ -256,3 +256,33 @@ def test_archived_project_returns_accepted_move_retry_but_rejects_new_move(kind:
     assert retry.json() == first.json()
     assert api.get(f"/api/actions/{first.json()['action_id']}").json() == original
     assert api.post(endpoint, json={**command, "idempotency_key": "new-command"}).status_code == 409
+
+
+@pytest.mark.parametrize("action_status,attempts", [("PENDING", 0), ("PROCESSING", 1), ("FAILED", 1)])
+def test_archive_waits_for_accepted_moves_before_becoming_read_only(action_status: str, attempts: int) -> None:
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Accepted move", "column_id": board["columns"][0]["id"]}).json()
+    action_id = f"queued-{project['id']}"
+    action = {"id": action_id, "project_id": project["id"], "action_type": "MOVE_TASK", "payload": {"task_id": task["id"], "target_column_id": board["columns"][-1]["id"], "target_position": 0, "idempotency_key": action_id}, "idempotency_key": action_id, "status": action_status, "attempt_count": attempts, "last_error": None, "created_at": "2026-01-01T00:00:00+00:00", "started_at": None, "completed_at": None}
+    main.repository.actions[action_id] = action
+    main.repository.action_keys[(project["id"], action_id)] = action_id
+    main.repository.save()
+    blocked = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+    assert blocked.status_code == 409
+    assert "pending" in blocked.json()["detail"]
+    assert not main.repository.projects[project["id"]]["is_archived"]
+    assert action["status"] == action_status
+    assert action["attempt_count"] == attempts
+    main.recover_actions()
+    assert action["status"] == "COMPLETED"
+    assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200
+    persisted = DatabaseRepository(MockRepository())
+    assert persisted.projects[project["id"]]["is_archived"]
+    assert persisted.actions[action_id]["status"] == "COMPLETED"
+    assert persisted.tasks[task["id"]]["column_id"] == board["columns"][-1]["id"]
+    api.post(f"/api/projects/{project['id']}/restore")
+    completed_attempts = action["attempt_count"]
+    main.recover_actions()
+    assert action["attempt_count"] == completed_attempts
