@@ -24,7 +24,8 @@ class ProjectService:
 
     def archive_summary(self, project_id: str) -> dict:
         tasks = self.repository.project_tasks(project_id)
-        done = next((column["id"] for column in self.repository.project_columns(project_id) if column["name"].lower() == "done"), None)
+        columns = self.repository.project_columns(project_id)
+        done = columns[-1]["id"] if columns else None
         completed = sum(task["column_id"] == done for task in tasks)
         return {"total_tasks": len(tasks), "completed_tasks": completed, "incomplete_tasks": len(tasks) - completed}
 

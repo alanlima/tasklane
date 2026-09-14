@@ -69,8 +69,8 @@ def list_projects(include_archived: bool = False) -> list[dict]:
     summaries = []
     for project in sorted(repository.projects.values(), key=lambda item: item["updated_at"], reverse=True):
         if project.get("is_archived", False) and not include_archived: continue
-        tasks = repository.project_tasks(project["id"]); done = next((column["id"] for column in repository.project_columns(project["id"]) if column["name"].lower() == "done"), None); completed = sum(task["column_id"] == done for task in tasks)
-        summaries.append(repository.copy(project) | {"total_tasks": len(tasks), "completed_tasks": completed, "completion_percentage": round(completed / len(tasks) * 100) if tasks else 0})
+        summary = project_service.archive_summary(project["id"]); total = summary["total_tasks"]; completed = summary["completed_tasks"]
+        summaries.append(repository.copy(project) | {"total_tasks": total, "completed_tasks": completed, "completion_percentage": round(completed / total * 100) if total else 0})
     return summaries
 
 @app.post("/api/projects", status_code=status.HTTP_201_CREATED)

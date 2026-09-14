@@ -219,3 +219,17 @@ def test_task_can_be_reordered_within_its_current_column() -> None:
     tasks = api.get(f"/api/projects/{project['id']}/board").json()["tasks"]
     ordered = [task["id"] for task in tasks if task["column_id"] == column["id"]]
     assert ordered == [second["id"], first["id"]]
+
+
+def test_archive_and_dashboard_completion_use_final_column_not_name() -> None:
+    api = client()
+    project = api.post("/api/projects", json={"name": "Completion lanes"}).json()
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    final = board["columns"][-1]
+    assert api.patch(f"/api/columns/{final['id']}", json={"name": "Complete"}).status_code == 200
+    api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Finished", "column_id": final["id"]})
+    summary = api.get(f"/api/projects/{project['id']}/archive-summary").json()
+    assert summary == {"total_tasks": 1, "completed_tasks": 1, "incomplete_tasks": 0}
+    dashboard = next(item for item in api.get("/api/projects").json() if item["id"] == project["id"])
+    assert dashboard["completion_percentage"] == 100
+    assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200

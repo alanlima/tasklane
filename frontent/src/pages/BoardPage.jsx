@@ -8,7 +8,7 @@ import { TaskDrawer } from "../components/task/TaskDrawer";
 
 export function BoardPage({ project, onBack, onRefresh, onSettings, onLabels }) {
   const [activeTaskId, setActiveTaskId] = useState(null); const [draggedTaskId, setDraggedTaskId] = useState(null); const [newTaskColumn, setNewTaskColumn] = useState(null); const [newColumn, setNewColumn] = useState(false);
-  const task = project.tasks.find((item) => item.id === activeTaskId); const doneColumn = project.columns.find((column) => column.name.toLowerCase() === "done"); const completeCount = doneColumn ? project.tasks.filter((item) => item.columnId === doneColumn.id).length : 0;
+  const task = project.tasks.find((item) => item.id === activeTaskId); const doneColumn = [...project.columns].sort((a, b) => a.position - b.position).at(-1); const completeCount = doneColumn ? project.tasks.filter((item) => item.columnId === doneColumn.id).length : 0;
   const createTask = async (title) => { await api.createTask(project.id, { title, columnId: newTaskColumn }); setNewTaskColumn(null); onRefresh(); };
   const drop = async (columnId) => { if (!draggedTaskId) return; const moving = project.tasks.find((item) => item.id === draggedTaskId); if (moving.columnId !== columnId) await api.moveTask(project.id, draggedTaskId, columnId, project.tasks.filter((item) => item.columnId === columnId).length); setDraggedTaskId(null); onRefresh(); };
   const moveColumn = async (index, direction) => { const destination = index + direction; if (destination < 0 || destination >= project.columns.length) return; await api.reorderColumns(project.id, index, destination); onRefresh(); };
