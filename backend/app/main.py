@@ -200,14 +200,15 @@ def recover_actions() -> None:
 def accepted_action(project_id: str, action_type: str, payload: dict[str, Any]) -> dict:
     key = (project_id, payload["idempotency_key"])
     if key in repository.action_keys: action = repository.actions[repository.action_keys[key]]; return {"action_id": action["id"], "status": action["status"]}
+    writable_project(project_id)
     action = {"id": new_id(), "project_id": project_id, "action_type": action_type, "payload": payload, "idempotency_key": payload["idempotency_key"], "status": "PENDING", "attempt_count": 0, "last_error": None, "created_at": now(), "started_at": None, "completed_at": None}; repository.actions[action["id"]] = action; repository.action_keys[key] = action["id"]
     process_action(action)
     return {"action_id": action["id"], "status": action["status"]}
 
 @app.post("/api/projects/{project_id}/actions/move-task", status_code=202)
-def move_task(project_id: str, payload: MoveTask) -> dict: writable_project(project_id); return accepted_action(project_id, "MOVE_TASK", payload.model_dump())
+def move_task(project_id: str, payload: MoveTask) -> dict: project_or_404(project_id); return accepted_action(project_id, "MOVE_TASK", payload.model_dump())
 @app.post("/api/projects/{project_id}/actions/move-column", status_code=202)
-def move_column(project_id: str, payload: MoveColumn) -> dict: writable_project(project_id); return accepted_action(project_id, "MOVE_COLUMN", payload.model_dump())
+def move_column(project_id: str, payload: MoveColumn) -> dict: project_or_404(project_id); return accepted_action(project_id, "MOVE_COLUMN", payload.model_dump())
 @app.get("/api/actions/{action_id}")
 def get_action(action_id: str) -> dict:
     if action_id not in repository.actions: raise HTTPException(404, "Action not found")

@@ -233,3 +233,26 @@ def test_archive_and_dashboard_completion_use_final_column_not_name() -> None:
     dashboard = next(item for item in api.get("/api/projects").json() if item["id"] == project["id"])
     assert dashboard["completion_percentage"] == 100
     assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200
+
+
+@pytest.mark.parametrize("kind", ["task", "column"])
+def test_archived_project_returns_accepted_move_retry_but_rejects_new_move(kind: str) -> None:
+    api = client()
+    project = create_project(api)
+    board = api.get(f"/api/projects/{project['id']}/board").json()
+    task = api.post(f"/api/projects/{project['id']}/tasks", json={"title": "Retry me", "column_id": board["columns"][0]["id"]}).json()
+    command = {"target_position": 0, "idempotency_key": f"archive-retry-{kind}"}
+    if kind == "task":
+        command.update(task_id=task["id"], target_column_id=board["columns"][1]["id"])
+    else:
+        command.update(column_id=board["columns"][1]["id"])
+    endpoint = f"/api/projects/{project['id']}/actions/move-{kind}"
+    first = api.post(endpoint, json=command)
+    assert first.status_code == 202
+    original = api.get(f"/api/actions/{first.json()['action_id']}").json()
+    assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True}).status_code == 200
+    retry = api.post(endpoint, json=command)
+    assert retry.status_code == 202
+    assert retry.json() == first.json()
+    assert api.get(f"/api/actions/{first.json()['action_id']}").json() == original
+    assert api.post(endpoint, json={**command, "idempotency_key": "new-command"}).status_code == 409
