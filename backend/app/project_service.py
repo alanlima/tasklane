@@ -23,8 +23,9 @@ class DeleteConfirmationError(Exception):
 class ProjectService:
     """Project lifecycle rules kept outside HTTP route handlers."""
 
-    def __init__(self, repository) -> None:
+    def __init__(self, repository, recover_actions) -> None:
         self.repository = repository
+        self.recover_actions = recover_actions
 
     def archive_summary(self, project_id: str) -> dict:
         tasks = self.repository.project_tasks(project_id)
@@ -38,6 +39,7 @@ class ProjectService:
             raise ProjectArchivedError("Archived projects are read-only. Restore the project to make changes.")
 
     def archive(self, project_id: str, confirm_incomplete: bool) -> dict:
+        self.recover_actions()
         if any(action["project_id"] == project_id and (
             action["status"] in {"PENDING", "PROCESSING"}
             or (action["status"] == "FAILED" and action["attempt_count"] < 5)

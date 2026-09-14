@@ -269,14 +269,10 @@ def test_archive_waits_for_accepted_moves_before_becoming_read_only(action_statu
     main.repository.actions[action_id] = action
     main.repository.action_keys[(project["id"], action_id)] = action_id
     main.repository.save()
-    blocked = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
-    assert blocked.status_code == 409
-    assert "pending" in blocked.json()["detail"]
-    assert not main.repository.projects[project["id"]]["is_archived"]
-    assert action["status"] == action_status
-    assert action["attempt_count"] == attempts
-    main.recover_actions()
+    archived = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False})
+    assert archived.status_code == 200
     assert action["status"] == "COMPLETED"
+    assert action["attempt_count"] == attempts + 1
     assert api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": False}).status_code == 200
     persisted = DatabaseRepository(MockRepository())
     assert persisted.projects[project["id"]]["is_archived"]
@@ -286,3 +282,23 @@ def test_archive_waits_for_accepted_moves_before_becoming_read_only(action_statu
     completed_attempts = action["attempt_count"]
     main.recover_actions()
     assert action["attempt_count"] == completed_attempts
+
+
+def test_archive_advances_failed_action_to_retry_limit_without_restart() -> None:
+    api = client()
+    project = create_project(api)
+    action_id = "invalid-accepted-action"
+    action = {"id": action_id, "project_id": project["id"], "action_type": "MOVE_COLUMN", "payload": {"column_id": "missing-column", "target_position": 0, "idempotency_key": action_id}, "idempotency_key": action_id, "status": "FAILED", "attempt_count": 1, "last_error": "Column not found", "created_at": "2026-01-01T00:00:00+00:00", "started_at": None, "completed_at": None}
+    main.repository.actions[action_id] = action
+    main.repository.action_keys[(project["id"], action_id)] = action_id
+    main.repository.save()
+    for attempts in range(2, 6):
+        response = api.post(f"/api/projects/{project['id']}/archive", json={"confirm_incomplete": True})
+        assert action["attempt_count"] == attempts
+        assert action["status"] == "FAILED"
+        assert response.status_code == (200 if attempts == 5 else 409)
+        persisted = DatabaseRepository(MockRepository())
+        assert persisted.actions[action_id]["attempt_count"] == attempts
+    api.post(f"/api/projects/{project['id']}/restore")
+    main.recover_actions()
+    assert action["attempt_count"] == 5
